@@ -110,7 +110,8 @@ function Sparkline({ points, max, color, height = 46 }) {
   const last = ys[ys.length - 1];
   return (
     <svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none">
-      <path d={area} fill={`${color}1f`} stroke="none" />
+      {/* fillOpacity (not an appended hex alpha) so var(--color) works */}
+      <path d={area} fill={color} fillOpacity={0.12} stroke="none" />
       <path d={line} className="spark-line" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
       <circle cx={width} cy={last} r="3" fill={color} className="spark-dot" />
     </svg>
@@ -128,7 +129,7 @@ function RingGauge({ ratio, color, children }) {
         <circle
           cx="56" cy="56" r={r} fill="none" stroke={color} strokeWidth="9" strokeLinecap="round"
           strokeDasharray={`${filled} ${c - filled}`} transform="rotate(-90 56 56)"
-          style={{ transition: 'stroke-dasharray .8s cubic-bezier(.3,.7,.3,1)', filter: `drop-shadow(0 0 6px ${color}66)` }}
+          style={{ transition: 'stroke-dasharray .8s cubic-bezier(.3,.7,.3,1)', filter: `drop-shadow(0 0 6px ${color})` }}
         />
       </svg>
       <div className="ring-center">{children}</div>
