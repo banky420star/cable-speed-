@@ -28,6 +28,14 @@ npm run api        # terminal 1 — API server on :8787
 npm run dev        # terminal 2 — Vite on :5173 (proxies /api → :8787)
 ```
 
+### Tests
+
+```bash
+npm test           # unit tests (ioreg parser, WebSocket frames) +
+                   # integration tests that spawn the real server and
+                   # exercise the HTTP + WebSocket endpoints
+```
+
 ## Native macOS app
 
 `Cable Speed Monitor.app` is a real native app (Swift + WebKit): double-click it

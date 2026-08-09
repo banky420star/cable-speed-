@@ -8,7 +8,8 @@
     "dev": "vite",
     "build": "vite build",
     "api": "node server.cjs",
-    "start": "npm run build && node server.cjs"
+    "start": "npm run build && node server.cjs",
+    "test": "node --test"
   },
   "dependencies": {
     "react": "^18.3.1",

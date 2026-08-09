@@ -601,11 +601,16 @@ server.on('upgrade', (req, socket) => {
   else socket.destroy();
 });
 
-server.listen(PORT, () => {
-  console.log(`Cable & Charging Monitor → http://localhost:${PORT}`);
-  console.log(`  API: http://localhost:${PORT}/api/status`);
-  console.log(`  WebSocket: ws://localhost:${PORT}/ws`);
-  if (!fs.existsSync(DIST)) {
-    console.log('  (no ./dist yet — run `npm run build` to serve the React UI)');
-  }
-});
+if (require.main === module) {
+  server.listen(PORT, () => {
+    console.log(`Cable & Charging Monitor → http://localhost:${PORT}`);
+    console.log(`  API: http://localhost:${PORT}/api/status`);
+    console.log(`  WebSocket: ws://localhost:${PORT}/ws`);
+    if (!fs.existsSync(DIST)) {
+      console.log('  (no ./dist yet — run `npm run build` to serve the React UI)');
+    }
+  });
+}
+
+// Only listens when run directly; exports the pure helpers for unit tests.
+module.exports = { parseIOReg, wsAccept, encodeFrame, USB_SPEEDS };
