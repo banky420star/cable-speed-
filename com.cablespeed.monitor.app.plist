@@ -6,8 +6,8 @@
 	<string>com.cablespeed.monitor.app</string>
 	<key>ProgramArguments</key>
 	<array>
-		<string>/usr/bin/open</string>
-		<string>/Volumes/AI_DRIVE/cable app/Cable Speed Monitor.app</string>
+		<string>/bin/bash</string>
+		<string>/Users/bank/Library/Application Support/Cable Speed Monitor/launch-at-login.sh</string>
 	</array>
 	<key>RunAtLoad</key>
 	<true/>

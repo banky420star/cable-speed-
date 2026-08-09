@@ -102,14 +102,16 @@ private func findNodeBinary() -> URL? {
 }
 
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate, WKNavigationDelegate {
     private var window: NSWindow!
     private var webView: WKWebView!
+    private var loadRetries = 0
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         buildMenu()
         buildWindow()
         showStarting()
+        bringToFront()
 
         DispatchQueue.global(qos: .userInitiated).async {
             let ok = ensureServerRunning()
@@ -120,6 +122,42 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate {
                     self.showError("Could not start the Cable Speed Monitor server.")
                 }
             }
+        }
+    }
+
+    private func bringToFront() {
+        window.makeKeyAndOrderFront(nil)
+        if #available(macOS 14.0, *) {
+            NSApp.activate()
+        } else {
+            NSApp.activate(ignoringOtherApps: true)
+        }
+    }
+
+    // WebKit navigation — surface load failures instead of a silent blank
+    // window, and bring the window forward once the dashboard is in.
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        bringToFront()
+    }
+
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        if (error as NSError).code == NSURLErrorCancelled { return }
+        retryLoad()
+    }
+
+    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+        if (error as NSError).code == NSURLErrorCancelled { return }
+        retryLoad()
+    }
+
+    private func retryLoad() {
+        guard loadRetries < 5 else {
+            showError("Dashboard did not load after 5 attempts. Check that the server on :8787 is running.")
+            return
+        }
+        loadRetries += 1
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
+            self?.webView.load(URLRequest(url: URL(string: "http://localhost:8787")!))
         }
     }
 
@@ -184,15 +222,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate {
         let config = WKWebViewConfiguration()
         webView = WKWebView(frame: rect, configuration: config)
         webView.uiDelegate = self
+        webView.navigationDelegate = self
         webView.allowsMagnification = true
         window.contentView = webView
 
-        window.makeKeyAndOrderFront(nil)
-        if #available(macOS 14.0, *) {
-            NSApp.activate()
-        } else {
-            NSApp.activate(ignoringOtherApps: true)
-        }
+        bringToFront()
     }
 
     @objc private func reload() {
@@ -200,6 +234,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate {
     }
 
     private func loadDashboard() {
+        loadRetries = 0
         webView.load(URLRequest(url: URL(string: "http://localhost:8787")!))
     }
 
