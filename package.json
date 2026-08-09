@@ -1,0 +1,21 @@
+{
+  "name": "cable-speed-ui",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "React dashboard that measures the USB link speed and real-world read throughput of an external drive.",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "api": "node server.cjs",
+    "start": "npm run build && node server.cjs"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.4",
+    "vite": "^5.4.11"
+  }
+}

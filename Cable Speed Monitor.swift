@@ -1,0 +1,211 @@
+import Cocoa
+import WebKit
+
+// ---------------------------------------------------------------------------
+// Cable Speed Monitor — native macOS app.
+// Opens the dashboard in its own WebKit window (no browser). Ensures the API
+// server on :8787 is running first, starting it from this bundle's project
+// folder when needed.
+// ---------------------------------------------------------------------------
+
+/// Server check + startup. Runs off the main thread (no UI state).
+func ensureServerRunning() -> Bool {
+    if serverResponds() { return true }
+
+    let projectDir = findProjectDirectory()
+    guard let projectDir = projectDir else { return false }
+
+    let nodeBin = findNodeBinary()
+    guard let nodeBin = nodeBin else { return false }
+
+    let proc = Process()
+    proc.executableURL = nodeBin
+    proc.arguments = [projectDir.appendingPathComponent("server.cjs").path]
+    proc.currentDirectoryURL = projectDir
+    let logPath = FileManager.default.homeDirectoryForCurrentUser
+        .appendingPathComponent("Library/Logs/cable-speed-monitor.log").path
+    if let fh = FileHandle(forWritingAtPath: logPath) {
+        proc.standardOutput = fh
+        proc.standardError = fh
+    }
+    do {
+        try proc.run()
+    } catch {
+        return false
+    }
+
+    // Wait (max ~15s) for the server to answer.
+    for _ in 0..<30 {
+        if serverResponds() { return true }
+        Thread.sleep(forTimeInterval: 0.5)
+    }
+    return false
+}
+
+private func serverResponds() -> Bool {
+    let url = URL(string: "http://localhost:8787/api/status")!
+    var request = URLRequest(url: url)
+    request.timeoutInterval = 2
+    let sem = DispatchSemaphore(value: 0)
+    var ok = false
+    URLSession.shared.dataTask(with: request) { _, response, _ in
+        if let http = response as? HTTPURLResponse, http.statusCode == 200 {
+            ok = true
+        }
+        sem.signal()
+    }.resume()
+    _ = sem.wait(timeout: .now() + 3)
+    return ok
+}
+
+private func findProjectDirectory() -> URL? {
+    let candidates = [
+        Bundle.main.bundleURL.deletingLastPathComponent(),
+        URL(fileURLWithPath: "/Volumes/AI_DRIVE/untitled folder"),
+    ]
+    for dir in candidates {
+        if FileManager.default.fileExists(
+            atPath: dir.appendingPathComponent("server.cjs").path
+        ) {
+            return dir
+        }
+    }
+    return nil
+}
+
+private func findNodeBinary() -> URL? {
+    let candidates = [
+        "/opt/homebrew/opt/node/bin/node",
+        "/opt/homebrew/bin/node",
+        "/usr/local/bin/node",
+        "/usr/bin/node",
+    ]
+    for path in candidates where FileManager.default.isExecutableFile(atPath: path) {
+        return URL(fileURLWithPath: path)
+    }
+    return nil
+}
+
+@MainActor
+final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate {
+    private var window: NSWindow!
+    private var webView: WKWebView!
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        buildMenu()
+        buildWindow()
+        showStarting()
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            let ok = ensureServerRunning()
+            DispatchQueue.main.async {
+                if ok {
+                    self.loadDashboard()
+                } else {
+                    self.showError("Could not start the Cable Speed Monitor server.")
+                }
+            }
+        }
+    }
+
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        true
+    }
+
+    // MARK: - UI
+
+    private func buildMenu() {
+        let mainMenu = NSMenu()
+
+        let appItem = NSMenuItem()
+        mainMenu.addItem(appItem)
+        let appMenu = NSMenu()
+        appMenu.addItem(
+            withTitle: "About Cable Speed Monitor",
+            action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)),
+            keyEquivalent: ""
+        )
+        appMenu.addItem(.separator())
+        appMenu.addItem(
+            withTitle: "Quit Cable Speed Monitor",
+            action: #selector(NSApplication.terminate(_:)),
+            keyEquivalent: "q"
+        )
+        appItem.submenu = appMenu
+
+        let viewItem = NSMenuItem()
+        mainMenu.addItem(viewItem)
+        let viewMenu = NSMenu(title: "View")
+        let reloadItem = NSMenuItem(title: "Reload Dashboard", action: #selector(reload), keyEquivalent: "r")
+        reloadItem.target = self
+        viewMenu.addItem(reloadItem)
+        viewItem.submenu = viewMenu
+
+        NSApp.mainMenu = mainMenu
+    }
+
+    private func buildWindow() {
+        let rect = NSRect(x: 0, y: 0, width: 1100, height: 740)
+        window = NSWindow(
+            contentRect: rect,
+            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = "Cable Speed Monitor"
+        window.minSize = NSSize(width: 720, height: 520)
+        window.center()
+        window.setFrameAutosaveName("CableSpeedMonitorWindow")
+
+        let config = WKWebViewConfiguration()
+        webView = WKWebView(frame: rect, configuration: config)
+        webView.uiDelegate = self
+        webView.allowsMagnification = true
+        window.contentView = webView
+
+        window.makeKeyAndOrderFront(nil)
+        if #available(macOS 14.0, *) {
+            NSApp.activate()
+        } else {
+            NSApp.activate(ignoringOtherApps: true)
+        }
+    }
+
+    @objc private func reload() {
+        webView.reload()
+    }
+
+    private func loadDashboard() {
+        webView.load(URLRequest(url: URL(string: "http://localhost:8787")!))
+    }
+
+    private func showStarting() {
+        webView.loadHTMLString(
+            """
+            <!DOCTYPE html><html><body style="margin:0;height:100vh;display:flex;align-items:center;justify-content:center;background:#05060a;color:#a1a1a6;font-family:-apple-system,sans-serif;font-size:15px">
+            <div style="text-align:center">⚡ Cable Speed Monitor<br><span style="color:#6e6e73;font-size:12px">starting server…</span></div>
+            </body></html>
+            """,
+            baseURL: nil
+        )
+    }
+
+    private func showError(_ message: String) {
+        webView.loadHTMLString(
+            """
+            <!DOCTYPE html><html><body style="margin:0;height:100vh;display:flex;align-items:center;justify-content:center;background:#05060a;color:#ff453a;font-family:-apple-system,sans-serif;font-size:15px;text-align:center;padding:20px">
+            <div>⚠️ \(message)<br><span style="color:#6e6e73;font-size:12px">Check that Node.js is installed and the project folder exists.</span></div>
+            </body></html>
+            """,
+            baseURL: nil
+        )
+    }
+}
+
+MainActor.assumeIsolated {
+    let app = NSApplication.shared
+    let delegate = AppDelegate()
+    app.delegate = delegate
+    app.setActivationPolicy(.regular)
+    app.run()
+}

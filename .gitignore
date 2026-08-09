@@ -1,0 +1,7 @@
+node_modules/
+dist/
+server.log
+snapshot.json
+preview.html
+*.app/
+.DS_Store
