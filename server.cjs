@@ -324,6 +324,94 @@ async function internetStatus() {
   };
 }
 
+// ---------- Memory / RAM ----------
+// Live usage from vm_stat; the speed is the chip's published spec (macOS
+// does not expose the memory clock, so we report the known LPDDR speed).
+const CHIP_SPECS = {
+  'M1': { mts: 4266, gbps: 68.25, type: 'LPDDR4X' },
+  'M1 Pro': { mts: 4266, gbps: 200, type: 'LPDDR5' },
+  'M1 Max': { mts: 4266, gbps: 400, type: 'LPDDR5' },
+  'M2': { mts: 6400, gbps: 100, type: 'LPDDR5' },
+  'M2 Pro': { mts: 6400, gbps: 200, type: 'LPDDR5' },
+  'M2 Max': { mts: 6400, gbps: 400, type: 'LPDDR5' },
+  'M3': { mts: 6400, gbps: 100, type: 'LPDDR5' },
+  'M3 Pro': { mts: 6400, gbps: 150, type: 'LPDDR5' },
+  'M3 Max': { mts: 6400, gbps: 400, type: 'LPDDR5' },
+  'M4': { mts: 7500, gbps: 120, type: 'LPDDR5X' },
+  'M4 Pro': { mts: 8533, gbps: 273, type: 'LPDDR5X' },
+  'M4 Max': { mts: 8533, gbps: 546, type: 'LPDDR5X' },
+};
+
+function matchChip(brand) {
+  if (!brand) return null;
+  const b = brand.toLowerCase();
+  for (const key of ['M4 Pro', 'M4 Max', 'M3 Pro', 'M3 Max', 'M2 Pro', 'M2 Max', 'M1 Pro', 'M1 Max', 'M4', 'M3', 'M2', 'M1']) {
+    if (b.includes(key.toLowerCase())) {
+      const spec = CHIP_SPECS[key];
+      if (spec) return { ...spec, chip: key };
+    }
+  }
+  return null;
+}
+
+function parseVmStat(out) {
+  const pageSize = Number((out.match(/page size of (\d+) bytes/) || [])[1] || 4096);
+  const page = (key) => {
+    const m = out.match(new RegExp(`^${key}:\\s+(\\d+)`, 'm'));
+    return m ? Number(m[1]) : 0;
+  };
+  return {
+    page_size: pageSize,
+    free: page('Pages free'),
+    active: page('Pages active'),
+    inactive: page('Pages inactive'),
+    speculative: page('Pages speculative'),
+    wired: page('Pages wired down'),
+    compressed: page('Pages occupied by compressor'),
+  };
+}
+
+let _memSpecCache = null; // { ts, type, manufacturer, chip, spec }
+async function memoryStatus() {
+  const [mem, vm, prof, brand] = await Promise.all([
+    run('sysctl -n hw.memsize 2>/dev/null'),
+    run('vm_stat 2>/dev/null'),
+    run('system_profiler SPMemoryDataType 2>/dev/null'),
+    run('sysctl -n machdep.cpu.brand_string 2>/dev/null'),
+  ]);
+  const total = Number((mem.stdout || '').trim()) || 0;
+  const s = parseVmStat(vm.stdout || '');
+  const ps = s.page_size;
+  const gb = (bytes) => Math.round((bytes / 1e9) * 10) / 10;
+  const usedB = (s.active + s.wired + s.compressed) * ps;
+  const freeB = (s.free + s.speculative) * ps;
+  const cachedB = s.inactive * ps;
+
+  if (!_memSpecCache || Date.now() - _memSpecCache.ts > 30000) {
+    const profOut = prof.stdout || '';
+    _memSpecCache = {
+      ts: Date.now(),
+      type: (profOut.match(/Type:\s*(\S+)/) || [])[1] || null,
+      manufacturer: ((profOut.match(/Manufacturer:\s*(.+)/) || [])[1] || '').trim() || null,
+      chip: (brand.stdout || '').trim() || null,
+      spec: matchChip((brand.stdout || '').trim()),
+    };
+  }
+  const { type, manufacturer, chip, spec } = _memSpecCache;
+  return {
+    total_gb: total ? gb(total) : null,
+    used_gb: total ? gb(usedB) : null,
+    free_gb: total ? gb(freeB) : null,
+    cached_gb: total ? gb(cachedB) : null,
+    percent_used: total ? Math.round((usedB / total) * 100) : null,
+    type: type || spec?.type || null,
+    manufacturer,
+    chip,
+    speed_mts: spec?.mts ?? null,
+    bandwidth_gb_per_sec: spec?.gbps ?? null,
+  };
+}
+
 // ---------- Drive capacity (df -k) ----------
 function parseDF(out, volume) {
   for (const line of out.split('\n')) {
@@ -574,12 +662,13 @@ async function powerStatus() {
 }
 
 async function statusPayload({ withBenchmark = false, volume = null } = {}) {
-  const [cable, power, internet] = await Promise.all([
+  const [cable, power, internet, memory] = await Promise.all([
     cableStatus({ withBenchmark, volume }),
     powerStatus(),
     internetStatus(),
+    memoryStatus(),
   ]);
-  return { ts: new Date().toISOString(), cable, power, internet };
+  return { ts: new Date().toISOString(), cable, power, internet, memory };
 }
 
 // Last benchmark per volume, so live pushes keep showing the result.
@@ -661,6 +750,9 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === '/api/power') {
       return sendJson(200, await powerStatus());
     }
+    if (url.pathname === '/api/memory') {
+      return sendJson(200, await memoryStatus());
+    }
     if (url.pathname.startsWith('/api/')) {
       return sendJson(404, { error: 'unknown endpoint' });
     }
@@ -688,4 +780,4 @@ if (require.main === module) {
 }
 
 // Only listens when run directly; exports the pure helpers for unit tests.
-module.exports = { parseIOReg, wsAccept, encodeFrame, USB_SPEEDS, parseNetstat, parseDF };
+module.exports = { parseIOReg, wsAccept, encodeFrame, USB_SPEEDS, parseNetstat, parseDF, parseVmStat, matchChip };

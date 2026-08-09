@@ -465,6 +465,41 @@ header.top .subtitle {
   margin: 8px 0 10px;
 }
 
+/* ------------------------------ RAM speed widget ---------------------------- */
+.ram-spec {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+.ram-spec .badge {
+  margin-bottom: 8px;
+}
+
+.ram-speed-big {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: clamp(28px, 5vw, 34px);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.ram-speed-big .unit {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--muted2);
+}
+
+.ram-sub {
+  margin-top: 7px;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
 /* ------------------------------ capacity bar -------------------------------- */
 .cap-bar {
   height: 8px;

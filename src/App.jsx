@@ -50,6 +50,7 @@ const ICONS = {
   pulse: <Icon path={<path d="M2 12h4l2.5-7 4 14 3-9 2.5 2H22" />} />,
   drive: <Icon path={<><path d="M22 12H2" /><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z" /><path d="M6 16h.01" /><path d="M10 16h.01" /></>} />,
   net: <Icon path={<><circle cx="12" cy="12" r="10" /><path d="M2 12h20" /><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20" /></>} />,
+  chip: <Icon path={<><rect x="4" y="4" width="16" height="16" rx="2" /><rect x="9" y="9" width="6" height="6" /><path d="M15 2v2M9 2v2M15 20v2M9 20v2M2 15h2M2 9h2M20 15h2M20 9h2" /></>} />,
 };
 
 /* ------------------------------ small helpers ------------------------------ */
@@ -501,6 +502,60 @@ function CapacityWidget({ cable }) {
   );
 }
 
+function MemoryWidget({ memory }) {
+  const total = memory?.total_gb ?? null;
+  const used = memory?.used_gb ?? null;
+  const free = memory?.free_gb ?? null;
+  const cached = memory?.cached_gb ?? null;
+  const pct = memory?.percent_used ?? 0;
+  const color = pct > 90 ? '#ff453a' : pct > 75 ? '#ff9f0a' : '#32d74b';
+  const mts = memory?.speed_mts ?? null;
+  const bw = memory?.bandwidth_gb_per_sec ?? null;
+  const type = memory?.type ?? null;
+  return (
+    <div className="widget w-2">
+      <div className="widget-body">
+        <div className="ram-spec">
+          <span className="badge badge-in" style={{ background: `${color}1f`, color, border: `1px solid ${color}55` }}>
+            {type || 'RAM'}
+          </span>
+          <div className="ram-speed-big">
+            {mts ? <><AnimatedNumber value={mts} /> <span className="unit">MT/s</span></> : '—'}
+          </div>
+          <div className="ram-sub">
+            {memory?.chip || 'Apple Silicon'}
+            {bw ? ` · ${bw} GB/s peak bandwidth` : ''}
+            {total ? ` · ${total} GB total` : ''}
+          </div>
+        </div>
+        <div className="through-row" style={{ marginTop: 12 }}>
+          <RingGauge ratio={pct / 100} color={color}>
+            <div className="g-num" style={{ color }}>{total ? `${pct}%` : '—'}</div>
+            <div className="g-unit">used</div>
+          </RingGauge>
+          <div className="through-meta">
+            <div className="stat-line">
+              <span className="k">used</span>
+              <span className="val" style={{ color }}>{used == null ? '—' : <AnimatedNumber value={used} decimals={1} />} GB</span>
+            </div>
+            <div className="stat-line">
+              <span className="k">free</span>
+              <span className="val">{fmtGB(free)}</span>
+            </div>
+            <div className="stat-line">
+              <span className="k">cached</span>
+              <span className="val" style={{ color: 'var(--blue)' }}>{fmtGB(cached)}</span>
+            </div>
+          </div>
+        </div>
+        <div className="cap-bar">
+          <span className="cap-fill" style={{ width: `${Math.min(100, pct)}%`, background: color }} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function InternetWidget({ internet }) {
   const down = internet?.down_mbps ?? null;
   const up = internet?.up_mbps ?? null;
@@ -637,6 +692,7 @@ const WIDGETS = [
   { key: 'flow', title: 'Data Flow', icon: ICONS.pulse, render: ({ cable, pushMs, pushAt }) => <FlowWidget cable={cable} pushMs={pushMs} pushAt={pushAt} />, span: 2 },
   { key: 'cable', title: 'Cable Speed', icon: ICONS.usb, render: ({ cable, history }) => <CableWidget cable={cable} history={history} />, span: 2 },
   { key: 'capacity', title: 'Drive Capacity', icon: ICONS.drive, render: ({ cable }) => <CapacityWidget cable={cable} />, span: 2 },
+  { key: 'memory', title: 'RAM Speed', icon: ICONS.chip, render: ({ memory }) => <MemoryWidget memory={memory} />, span: 2 },
   { key: 'internet', title: 'Internet Speed', icon: ICONS.net, render: ({ internet }) => <InternetWidget internet={internet} /> },
   { key: 'battery', title: 'Battery', icon: ICONS.battery, render: ({ power }) => <BatteryWidget power={power} /> },
   { key: 'charge', title: 'Charge Rate', icon: ICONS.bolt, render: ({ power }) => <ChargeWidget power={power} /> },
@@ -899,6 +955,7 @@ export default function App() {
     cable: data?.cable || {},
     power: data?.power || {},
     internet: data?.internet || {},
+    memory: data?.memory || {},
     testing,
     runFullTest,
     history: historyRef.current,

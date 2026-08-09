@@ -7,7 +7,7 @@ const crypto = require('node:crypto');
 const path = require('node:path');
 
 const PROJECT = path.join(__dirname, '..');
-const { parseIOReg, wsAccept, encodeFrame, USB_SPEEDS, parseNetstat, parseDF } = require(path.join(PROJECT, 'server.cjs'));
+const { parseIOReg, wsAccept, encodeFrame, USB_SPEEDS, parseNetstat, parseDF, parseVmStat, matchChip } = require(path.join(PROJECT, 'server.cjs'));
 
 // ------------------------------ unit tests ------------------------------
 
@@ -61,6 +61,33 @@ test('parseNetstat reads the default-interface byte counters', () => {
   ].join('\n');
   assert.deepEqual(parseNetstat(out, 'en0'), { ibytes: 3411961718, obytes: 1807932548 });
   assert.equal(parseNetstat(out, 'en7'), null);
+});
+
+test('parseVmStat reads the live memory counters', () => {
+  const out = [
+    'Mach Virtual Memory Statistics: (page size of 16384 bytes)',
+    'Pages free:                  100.',
+    'Pages active:               200.',
+    'Pages inactive:              50.',
+    'Pages speculative:           10.',
+    'Pages wired down:            30.',
+    'Pages occupied by compressor: 20.',
+  ].join('\n');
+  const s = parseVmStat(out);
+  assert.equal(s.page_size, 16384);
+  assert.equal(s.free, 100);
+  assert.equal(s.active, 200);
+  assert.equal(s.inactive, 50);
+  assert.equal(s.speculative, 10);
+  assert.equal(s.wired, 30);
+  assert.equal(s.compressed, 20);
+});
+
+test('matchChip maps the brand string to the LPDDR spec', () => {
+  assert.deepEqual(matchChip('Apple M4'), { mts: 7500, gbps: 120, type: 'LPDDR5X', chip: 'M4' });
+  assert.equal(matchChip('Apple M4 Pro').mts, 8533);
+  assert.equal(matchChip('Apple M2').mts, 6400);
+  assert.equal(matchChip('Intel Core i7'), null);
 });
 
 test('parseDF reads capacity from a df -k row', () => {
@@ -156,6 +183,11 @@ test('GET /api/status returns cable + power + internet payloads', async () => {
   for (const d of json.cable.drives) {
     assert.ok('capacity' in d, `drive ${d.name} carries capacity`);
   }
+  assert.ok(json.memory && typeof json.memory === 'object', 'memory payload present');
+  for (const k of ['total_gb', 'used_gb', 'percent_used', 'speed_mts', 'bandwidth_gb_per_sec', 'type']) {
+    assert.ok(k in json.memory, `memory.${k} present`);
+  }
+  assert.equal(typeof json.memory.percent_used, 'number', 'percent_used is a number');
 });
 
 test('GET /api/cable-speed returns the cable object at top level', async () => {

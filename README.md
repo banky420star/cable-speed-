@@ -9,6 +9,9 @@ A macOS-only React dashboard that shows, in real time:
   `df`, with a live gauge.
 - **Internet speed** — live upload and download in Mbps, sampled from
   `netstat -ib` counter deltas on the default interface.
+- **RAM speed** — live used/free/cached memory with a pressure gauge
+  (`vm_stat`), plus the chip's published LPDDR spec (e.g. M4 → 7500 MT/s,
+  120 GB/s) since macOS does not expose the memory clock.
 - **Full speed test** — an on-demand `dd` read benchmark that measures the
   drive's real maximum read speed.
 - **Charging** — charger wattage, battery %, live charge rate in watts
