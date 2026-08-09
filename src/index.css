@@ -524,79 +524,56 @@ header.top .subtitle {
   text-align: center;
 }
 
-/* ------------------------------ desktop widget ------------------------------ */
-.desktop-head {
+/* ------------------------------ wifi widget ------------------------------ */
+.wifi-head {
   display: flex;
-  justify-content: space-between;
   align-items: baseline;
-  margin-bottom: 8px;
-  font-size: 10.5px;
-  text-transform: uppercase;
-  letter-spacing: 0.07em;
-  color: var(--muted2);
-  font-weight: 700;
-}
-
-.desktop-list {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  max-height: 240px;
-  overflow-y: auto;
-}
-
-.desktop-row {
-  display: flex;
-  align-items: center;
+  justify-content: space-between;
   gap: 10px;
-  font-size: 12px;
-  padding: 5px 8px;
-  border-radius: 8px;
-  cursor: grab;
-  transition: background 0.15s;
+  margin-bottom: 12px;
 }
 
-.desktop-row:hover {
-  background: rgba(255, 255, 255, 0.05);
-}
-
-.desktop-row.dragging {
-  opacity: 0.4;
-  background: rgba(41, 151, 255, 0.1);
-}
-
-.desktop-icon {
-  display: inline-flex;
-  color: var(--blue);
-  flex-shrink: 0;
-}
-
-.desktop-name {
-  flex: 1;
+.wifi-ssid {
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-weight: 600;
 }
 
-.desktop-size {
+.wifi-ip {
+  font-size: 11.5px;
   color: var(--muted2);
-  font-size: 10.5px;
   font-variant-numeric: tabular-nums;
-  width: 52px;
-  text-align: right;
+  flex-shrink: 0;
 }
 
-.desktop-time {
-  color: var(--muted2);
+.wifi-row {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+
+.wifi-bar {
+  height: 8px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.07);
+  overflow: hidden;
+  margin-top: 12px;
+}
+
+.wifi-bar i {
+  display: block;
+  height: 100%;
+  border-radius: 6px;
+  transition: width 0.8s cubic-bezier(0.3, 0.7, 0.3, 1);
+}
+
+.wifi-sub {
+  margin-top: 7px;
   font-size: 10.5px;
-  width: 60px;
-  text-align: right;
-}
-
-.mini-grip {
-  opacity: 0.4;
-  cursor: grab;
+  color: var(--muted2);
 }
 
 /* ------------------------------ CPU widget ------------------------------ */
@@ -738,6 +715,98 @@ header.top .subtitle {
 .purge-hint {
   font-size: 10px;
   color: var(--muted2);
+}
+
+/* ------------------------- Wi-Fi max (speed test) ------------------------- */
+.wifi-max {
+  margin-top: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.wifi-max-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--muted2);
+  font-weight: 700;
+}
+
+.wifi-max-head b {
+  color: var(--fg);
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.reset-peaks {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: var(--muted2);
+  font-size: 10.5px;
+  padding: 3px 8px;
+  border-radius: 20px;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+}
+
+.reset-peaks:hover {
+  border-color: var(--blue);
+  color: var(--fg);
+}
+
+.wifi-max-cols {
+  display: flex;
+  gap: 14px;
+  margin-top: 10px;
+}
+
+.wifi-max-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.wifi-max-col.down {
+  box-shadow: inset 2px 0 0 var(--blue);
+}
+
+.wifi-max-col.up {
+  box-shadow: inset 2px 0 0 var(--green);
+}
+
+.wifi-max-val {
+  font-size: 19px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.wifi-max-col.down .wifi-max-val {
+  color: var(--blue);
+}
+
+.wifi-max-col.up .wifi-max-val {
+  color: var(--green);
+}
+
+.wifi-max-label {
+  font-size: 10.5px;
+  color: var(--muted2);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.wifi-max .tiny {
+  margin-top: 8px;
 }
 
 /* --------------------------- summary (speed test) --------------------------- */

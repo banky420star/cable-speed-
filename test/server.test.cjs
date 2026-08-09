@@ -7,7 +7,7 @@ const crypto = require('node:crypto');
 const path = require('node:path');
 
 const PROJECT = path.join(__dirname, '..');
-const { parseIOReg, wsAccept, encodeFrame, USB_SPEEDS, parseNetstat, parseDF, parseVmStat, matchChip, parsePsProcs } = require(path.join(PROJECT, 'server.cjs'));
+const { parseIOReg, wsAccept, encodeFrame, USB_SPEEDS, parseNetstat, parseDF, parseVmStat, matchChip, parsePsProcs, parseWifi } = require(path.join(PROJECT, 'server.cjs'));
 
 // ------------------------------ unit tests ------------------------------
 
@@ -81,6 +81,28 @@ test('parseVmStat reads the live memory counters', () => {
   assert.equal(s.speculative, 10);
   assert.equal(s.wired, 30);
   assert.equal(s.compressed, 20);
+});
+
+test('parseWifi reads the current network block', () => {
+  const out = [
+    '          Current Network Information:',
+    '            HomeNet:',
+    '              PHY Mode: 802.11ax',
+    '              Channel: 36 (5GHz, 80MHz)',
+    '              Security: WPA3 Personal',
+    '              Signal / Noise: -58 dBm / -92 dBm',
+    '              Transmit Rate: 1200',
+    '          Other Local Wi-Fi Networks:',
+    '            Neighbour: ...',
+  ].join('\n');
+  const w = parseWifi(out);
+  assert.equal(w.ssid, 'HomeNet');
+  assert.equal(w.phy, '802.11ax');
+  assert.equal(w.channel, '36 (5GHz, 80MHz)');
+  assert.equal(w.security, 'WPA3 Personal');
+  assert.equal(w.signal_dbm, -58);
+  assert.equal(w.noise_dbm, -92);
+  assert.equal(w.tx_rate_mbps, 1200);
 });
 
 test('parsePsProcs reads top processes from ps output', () => {
@@ -206,11 +228,9 @@ test('GET /api/status returns cable + power + internet payloads', async () => {
   assert.ok('load_pct' in json.cpu);
   assert.ok('cores' in json.cpu);
   assert.ok(Array.isArray(json.cpu.processes));
-  assert.ok(json.desktop && typeof json.desktop === 'object', 'desktop payload present');
-  assert.ok('path' in json.desktop);
-  assert.ok(Array.isArray(json.desktop.items));
-  for (const it of json.desktop.items) {
-    assert.ok('name' in it && 'dir' in it && 'size_bytes' in it);
+  assert.ok(json.wifi && typeof json.wifi === 'object', 'wifi payload present');
+  for (const k of ['ssid', 'phy', 'channel', 'security', 'signal_dbm', 'tx_rate_mbps', 'ipv4', 'signal_quality_pct']) {
+    assert.ok(k in json.wifi, `wifi.${k} present`);
   }
 });
 

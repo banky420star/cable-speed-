@@ -9,6 +9,12 @@ A macOS-only React dashboard that shows, in real time:
   `df`, with a live gauge.
 - **Internet speed** — live upload and download in Mbps, sampled from
   `netstat -ib` counter deltas on the default interface.
+- **Wi-Fi** — current network: SSID, PHY mode, channel, security, signal /
+  noise (with a quality %), transmit rate (the link cap), and IP — read
+  from `system_profiler SPAirPortDataType`.
+- **Wi-Fi max ↓/↑** — the Speed Test widget tracks the peak download and
+  upload speeds observed this session (with a reset button) alongside the
+  Wi-Fi link cap.
 - **RAM speed** — live used/free/cached memory with a pressure gauge
   (`vm_stat`), plus the chip's published LPDDR spec (e.g. M4 → 7500 MT/s,
   120 GB/s) since macOS does not expose the memory clock. Includes a

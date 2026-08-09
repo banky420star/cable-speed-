@@ -29,7 +29,6 @@ const { exec } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
-const os = require('os');
 
 const PORT = Number(process.env.CABLE_MONITOR_PORT || 8787);
 const DIST = path.join(__dirname, 'dist');
@@ -325,37 +324,49 @@ async function internetStatus() {
   };
 }
 
-// ---------- Desktop listing ----------
-function desktopStatus() {
-  const dir = path.join(os.homedir(), 'Desktop');
-  try {
-    const entries = fs.readdirSync(dir, { withFileTypes: true });
-    const items = entries.slice(0, 60).map((e) => {
-      let size = null;
-      let mtime = null;
-      try {
-        const st = fs.statSync(path.join(dir, e.name));
-        size = st.size;
-        mtime = st.mtimeMs;
-      } catch {
-        /* ignore unreadable entries */
-      }
-      return {
-        name: e.name,
-        dir: e.isDirectory(),
-        size_bytes: size,
-        modified: mtime ? new Date(mtime).toISOString() : null,
-      };
-    });
-    items.sort(
-      (a, b) =>
-        (a.dir === b.dir ? 0 : a.dir ? -1 : 1) ||
-        String(b.modified || '').localeCompare(String(a.modified || ''))
-    );
-    return { path: dir, count: items.length, items };
-  } catch (err) {
-    return { path: dir, count: 0, items: [], error: String((err && err.message) || err) };
+// ---------- Wi-Fi ----------
+// Parses the "Current Network Information" block of SPAirPortDataType.
+function parseWifi(out) {
+  const block =
+    (out.match(/Current Network Information:[\s\S]*?(?=Other Local Wi-Fi Networks:|$)/) || [])[0] || '';
+  const grab = (re) => {
+    const m = block.match(re);
+    return m ? m[1] : null;
+  };
+  const sigM = block.match(/Signal \/ Noise:\s*(-?\d+) dBm \/ (-?\d+) dBm/);
+  const lines = block.split('\n').map((l) => l.trim()).filter(Boolean);
+  const ssidLine = lines.find((l) => l !== 'Current Network Information:' && l.endsWith(':'));
+  const rate = grab(/Transmit Rate:\s*(\d+)/);
+  return {
+    ssid: ssidLine ? ssidLine.slice(0, -1) : null,
+    phy: grab(/PHY Mode:\s*(\S+)/),
+    channel: grab(/Channel:\s*(.+)/)?.trim() || null,
+    security: grab(/Security:\s*(.+)/)?.trim() || null,
+    signal_dbm: sigM ? Number(sigM[1]) : null,
+    noise_dbm: sigM ? Number(sigM[2]) : null,
+    tx_rate_mbps: rate ? Number(rate) : null,
+  };
+}
+
+let _wifiCache = null; // { ts, data }
+async function wifiStatus() {
+  const [prof, ip] = await Promise.all([
+    run('system_profiler SPAirPortDataType 2>/dev/null'),
+    run('ipconfig getifaddr en0 2>/dev/null'),
+  ]);
+  if (!_wifiCache || Date.now() - _wifiCache.ts > 15000) {
+    _wifiCache = { ts: Date.now(), data: parseWifi(prof.stdout || '') };
   }
+  const w = _wifiCache.data;
+  // RSSI quality: ~-30 dBm excellent … -90 dBm unusable.
+  const quality = w.signal_dbm != null
+    ? Math.max(0, Math.min(100, Math.round(((w.signal_dbm + 90) / 60) * 100)))
+    : null;
+  return {
+    ...w,
+    ipv4: (ip.stdout || '').trim() || null,
+    signal_quality_pct: quality,
+  };
 }
 
 // ---------- CPU / top processes ----------
@@ -737,14 +748,15 @@ async function powerStatus() {
 }
 
 async function statusPayload({ withBenchmark = false, volume = null } = {}) {
-  const [cable, power, internet, memory, cpu] = await Promise.all([
+  const [cable, power, internet, memory, cpu, wifi] = await Promise.all([
     cableStatus({ withBenchmark, volume }),
     powerStatus(),
     internetStatus(),
     memoryStatus(),
     cpuStatus(),
+    wifiStatus(),
   ]);
-  return { ts: new Date().toISOString(), cable, power, internet, memory, cpu, desktop: desktopStatus() };
+  return { ts: new Date().toISOString(), cable, power, internet, memory, cpu, wifi };
 }
 
 // Last benchmark per volume, so live pushes keep showing the result.
@@ -832,8 +844,8 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === '/api/cpu') {
       return sendJson(200, await cpuStatus());
     }
-    if (url.pathname === '/api/desktop') {
-      return sendJson(200, desktopStatus());
+    if (url.pathname === '/api/wifi') {
+      return sendJson(200, await wifiStatus());
     }
     if (url.pathname === '/api/purge' && req.method === 'POST') {
       // Flush inactive memory caches. macOS pops the native admin prompt.
@@ -871,4 +883,4 @@ if (require.main === module) {
 }
 
 // Only listens when run directly; exports the pure helpers for unit tests.
-module.exports = { parseIOReg, wsAccept, encodeFrame, USB_SPEEDS, parseNetstat, parseDF, parseVmStat, matchChip, parsePsProcs };
+module.exports = { parseIOReg, wsAccept, encodeFrame, USB_SPEEDS, parseNetstat, parseDF, parseVmStat, matchChip, parsePsProcs, parseWifi };

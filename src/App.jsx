@@ -50,8 +50,7 @@ const ICONS = {
   drive: <Icon path={<><path d="M22 12H2" /><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z" /><path d="M6 16h.01" /><path d="M10 16h.01" /></>} />,
   net: <Icon path={<><circle cx="12" cy="12" r="10" /><path d="M2 12h20" /><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20" /></>} />,
   chip: <Icon path={<><rect x="4" y="4" width="16" height="16" rx="2" /><rect x="9" y="9" width="6" height="6" /><path d="M15 2v2M9 2v2M15 20v2M9 20v2M2 15h2M2 9h2M20 15h2M20 9h2" /></>} />,
-  folder: <Icon path={<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />} />,
-  file: <Icon path={<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z M14 2v6h6" />} />,
+  wifi: <Icon path={<><path d="M5 13a10 10 0 0 1 14 0" /><path d="M8.5 16.5a5 5 0 0 1 7 0" /><path d="M2 8.82a15 15 0 0 1 20 0" /><path d="M12 20h.01" /></>} />,
 };
 
 /* ------------------------------ small helpers ------------------------------ */
@@ -59,15 +58,6 @@ const fmtMBs = (v) => (v == null ? '—' : v >= 100 ? String(Math.round(v)) : v.
 const fmtWatts = (v) => (v == null ? '—' : `${v.toFixed(1)} W`);
 const fmtGbps = (mbps) => (mbps ? `${(mbps / 1000).toFixed(1)} Gbps` : '—');
 const fmtGB = (v) => (v == null ? '—' : `${v} GB`);
-const fmtBytes = (b) => (b == null ? '' : b >= 1e9 ? `${(b / 1e9).toFixed(1)} GB` : b >= 1e6 ? `${(b / 1e6).toFixed(1)} MB` : b >= 1e3 ? `${(b / 1e3).toFixed(0)} KB` : `${b} B`);
-const relTime = (iso) => {
-  if (!iso) return '';
-  const s = (Date.now() - new Date(iso).getTime()) / 1000;
-  if (s < 60) return 'just now';
-  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
-  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
-  return `${Math.floor(s / 86400)}d ago`;
-};
 
 function AnimatedNumber({ value, decimals = 0, duration = 700 }) {
   const [display, setDisplay] = useState(value);
@@ -284,51 +274,48 @@ function MemoryWidget({ memory, history, purgeMemory, purging }) {
   );
 }
 
-function DesktopWidget({ desktop }) {
-  const items = desktop?.items || [];
-  const [order, setOrder] = useState(() => store.get('cs_desktop_order', []));
-  const [drag, setDrag] = useState(null);
-  useEffect(() => store.set('cs_desktop_order', order), [order]);
-  const ordered = [
-    ...order.map((n) => items.find((i) => i.name === n)).filter(Boolean),
-    ...items.filter((i) => !order.includes(i.name)),
-  ];
-  const drop = (to) => {
-    if (!drag || drag === to) return setDrag(null);
-    setOrder((prev) => {
-      const arr = prev.filter((n) => n !== drag);
-      const idx = arr.indexOf(to);
-      arr.splice(idx < 0 ? arr.length : idx, 0, drag);
-      return arr;
-    });
-    setDrag(null);
-  };
+function WifiWidget({ wifi }) {
+  const rawSsid = wifi?.ssid;
+  const ssid = rawSsid && !/redacted/i.test(rawSsid) ? rawSsid : 'Wi-Fi network';
+  const q = wifi?.signal_quality_pct ?? null;
+  const color = q == null ? 'var(--muted2)' : q > 70 ? 'var(--green)' : q > 40 ? 'var(--orange)' : 'var(--red)';
+  const rate = wifi?.tx_rate_mbps ?? null;
   return (
     <div className="widget w-2">
       <div className="widget-body">
-        <div className="desktop-head">
-          <span>~/Desktop · {desktop?.count ?? items.length} items</span>
-          <span className="spark-live">drag to pin · live</span>
+        <div className="wifi-head">
+          <span className="wifi-ssid">{ssid}</span>
+          <span className="wifi-ip">{wifi?.ipv4 || 'no IP'}</span>
         </div>
-        <div className="desktop-list">
-          {ordered.length === 0 && <div className="proc-empty">{desktop?.error ? `desktop unavailable: ${desktop.error}` : 'desktop is empty'}</div>}
-          {ordered.map((it) => (
-            <div
-              key={it.name}
-              className={`desktop-row${drag === it.name ? ' dragging' : ''}`}
-              draggable
-              onDragStart={() => setDrag(it.name)}
-              onDragOver={(e) => e.preventDefault()}
-              onDrop={() => drop(it.name)}
-              title={`${it.name} · ${it.dir ? 'folder' : 'file'}`}
-            >
-              <span className="desktop-icon">{it.dir ? ICONS.folder : ICONS.file}</span>
-              <span className="desktop-name">{it.name}</span>
-              <span className="desktop-size">{it.dir ? 'folder' : fmtBytes(it.size_bytes)}</span>
-              <span className="desktop-time">{relTime(it.modified)}</span>
-              <span className="grip mini-grip">{ICONS.grip}</span>
+        <div className="wifi-row">
+          <RingGauge ratio={(q ?? 0) / 100} color={color}>
+            <div className="g-num" style={{ color }}>{q == null ? '—' : <AnimatedNumber value={q} decimals={0} />}</div>
+            <div className="g-unit">signal</div>
+          </RingGauge>
+          <div className="through-meta">
+            <div className="stat-line">
+              <span className="k">tx rate</span>
+              <span className="val">{rate != null ? `${rate} Mbps` : '—'}</span>
             </div>
-          ))}
+            <div className="stat-line">
+              <span className="k">phy</span>
+              <span className="val">{wifi?.phy || '—'}</span>
+            </div>
+            <div className="stat-line">
+              <span className="k">channel</span>
+              <span className="val">{wifi?.channel || '—'}</span>
+            </div>
+            <div className="stat-line">
+              <span className="k">security</span>
+              <span className="val">{wifi?.security || '—'}</span>
+            </div>
+          </div>
+        </div>
+        <div className="wifi-bar">
+          <i style={{ width: `${q ?? 0}%`, background: color }} />
+        </div>
+        <div className="wifi-sub">
+          {wifi?.signal_dbm != null ? `signal ${wifi.signal_dbm} dBm · noise ${wifi.noise_dbm ?? '—'} dBm` : 'signal data unavailable'}
         </div>
       </div>
     </div>
@@ -428,7 +415,7 @@ function InternetWidget({ internet, history }) {
   );
 }
 
-function TestWidget({ cable, power, memory, cpu, internet, testing, runFullTest }) {
+function TestWidget({ cable, power, memory, cpu, internet, wifi, peaks, resetPeaks, testing, runFullTest }) {
   const bench = cable.benchmark?.mb_per_sec ?? null;
   const capable = cable.capable?.mb_per_sec ?? null;
   const pct = bench != null && capable ? Math.round((bench / capable) * 100) : null;
@@ -460,6 +447,33 @@ function TestWidget({ cable, power, memory, cpu, internet, testing, runFullTest 
           </div>
         )}
         {cable.bench_file && <div className="tiny">file: {cable.bench_file}</div>}
+        <div className="wifi-max">
+          <div className="wifi-max-head">
+            <span>Wi-Fi max <b>↓ upload &amp; download ↑</b> this session</span>
+            <button className="reset-peaks" onClick={resetPeaks} title="Reset the measured peaks">↺ reset</button>
+          </div>
+          <div className="wifi-max-cols">
+            <div className="wifi-max-col down">
+              <span className="net-arrow down">↓</span>
+              <span className="wifi-max-val">
+                {peaks.down > 0 ? `${peaks.down.toFixed(1)} Mbps` : '—'}
+              </span>
+              <span className="wifi-max-label">max download</span>
+            </div>
+            <div className="wifi-max-col up">
+              <span className="net-arrow up">↑</span>
+              <span className="wifi-max-val">
+                {peaks.up > 0 ? `${peaks.up.toFixed(1)} Mbps` : '—'}
+              </span>
+              <span className="wifi-max-label">max upload</span>
+            </div>
+          </div>
+          {wifi?.tx_rate_mbps != null && (
+            <div className="tiny">
+              Wi-Fi link cap ≈ {wifi.tx_rate_mbps} Mbps{wifi.ssid ? ` · ${wifi.ssid}` : ''} · peaks reset with ↺
+            </div>
+          )}
+        </div>
         <div className="summary-head">
           <span>Live summary · all sections</span>
           <span className="spark-live">updates with each push</span>
@@ -571,14 +585,14 @@ const WIDGETS = [
   { key: 'capacity', title: 'Drive Capacity', icon: ICONS.drive, render: ({ cable }) => <CapacityWidget cable={cable} />, span: 2 },
   { key: 'memory', title: 'RAM Speed', icon: ICONS.chip, render: ({ memory, history, purgeMemory, purging }) => <MemoryWidget memory={memory} history={history} purgeMemory={purgeMemory} purging={purging} />, span: 2 },
   { key: 'cpu', title: 'CPU', icon: ICONS.chip, render: ({ cpu, history }) => <CpuWidget cpu={cpu} history={history} />, span: 2 },
-  { key: 'desktop', title: 'Desktop', icon: ICONS.folder, render: ({ desktop }) => <DesktopWidget desktop={desktop} />, span: 2 },
+  { key: 'wifi', title: 'Wi-Fi', icon: ICONS.wifi, render: ({ wifi }) => <WifiWidget wifi={wifi} />, span: 2 },
   { key: 'internet', title: 'Internet Speed', icon: ICONS.net, render: ({ internet, history }) => <InternetWidget internet={internet} history={history} /> },
   { key: 'battery', title: 'Battery', icon: ICONS.battery, render: ({ power, history }) => <BatteryWidget power={power} history={history} /> },
   { key: 'charge', title: 'Charge Rate', icon: ICONS.bolt, render: ({ power, history }) => <ChargeWidget power={power} history={history} /> },
   { key: 'charger', title: 'Charger', icon: ICONS.plug, render: ({ power }) => <ChargerWidget power={power} /> },
   { key: 'health', title: 'Battery Health', icon: ICONS.heart, render: ({ power }) => <HealthWidget power={power} /> },
-  { key: 'test', title: 'Speed Test', icon: ICONS.info, render: ({ cable, power, memory, cpu, internet, testing, runFullTest }) => (
-    <TestWidget cable={cable} power={power} memory={memory} cpu={cpu} internet={internet} testing={testing} runFullTest={runFullTest} />
+  { key: 'test', title: 'Speed Test', icon: ICONS.info, render: ({ cable, power, memory, cpu, internet, wifi, peaks, resetPeaks, testing, runFullTest }) => (
+    <TestWidget cable={cable} power={power} memory={memory} cpu={cpu} internet={internet} wifi={wifi} peaks={peaks} resetPeaks={resetPeaks} testing={testing} runFullTest={runFullTest} />
   ) },
   { key: 'diagnosis', title: 'Diagnosis', icon: ICONS.info, render: ({ cable }) => <DiagnosisWidget cable={cable} />, span: 2 },
 ];
@@ -595,6 +609,7 @@ export default function App() {
   const [flash, setFlash] = useState(false); // live-pill ripple on refresh
   const [removing, setRemoving] = useState(null); // widget mid-hide animation
   const [purging, setPurging] = useState(false); // RAM cache flush in flight
+  const [peaks, setPeaks] = useState({ down: 0, up: 0 }); // Wi-Fi max ↓/↑ this session
   const gridRef = useRef(null);
   const wsConnectedRef = useRef(false);
   const [order, setOrder] = useState(() => {
@@ -627,6 +642,7 @@ export default function App() {
       setIsLive(true);
       setFlash(true);
       setTimeout(() => setFlash(false), 800);
+      trackPeaks(json.internet?.down_mbps, json.internet?.up_mbps);
       historyRef.current = [
         ...historyRef.current.slice(-(HISTORY_MAX - 1)),
         {
@@ -654,6 +670,15 @@ export default function App() {
     },
     [volume]
   );
+
+  const trackPeaks = useCallback((down, up) => {
+    setPeaks((p) => ({
+      down: down != null && down > p.down ? down : p.down,
+      up: up != null && up > p.up ? up : p.up,
+    }));
+  }, []);
+
+  const resetPeaks = useCallback(() => setPeaks({ down: 0, up: 0 }), []);
 
   const purgeMemory = useCallback(async () => {
     setPurging(true);
@@ -714,6 +739,7 @@ export default function App() {
       setData(json);
       setError(null);
       setIsLive(true);
+      trackPeaks(json.internet?.down_mbps, json.internet?.up_mbps);
       historyRef.current = [
         ...historyRef.current.slice(-(HISTORY_MAX - 1)),
         {
@@ -796,11 +822,13 @@ export default function App() {
     internet: data?.internet || {},
     memory: data?.memory || {},
     cpu: data?.cpu || {},
-    desktop: data?.desktop || {},
+    wifi: data?.wifi || {},
     testing,
     runFullTest,
     purgeMemory,
     purging,
+    peaks,
+    resetPeaks,
     history: historyRef.current,
   };
   const live = data?.cable?.live_mb_per_sec;
