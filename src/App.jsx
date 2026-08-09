@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 const POLL_MS = 3000; // live MB/s + charge rate
 const HISTORY_MAX = 60;
@@ -47,7 +47,6 @@ const ICONS = {
   info: <Icon path={<><circle cx="12" cy="12" r="9" /><path d="M12 11v5" /><path d="M12 8h.01" /></>} />,
   close: <Icon path={<path d="M6 6l12 12M18 6 6 18" />} />,
   grip: <Icon path={<><path d="M9 5h.01M15 5h.01M9 12h.01M15 12h.01M9 19h.01M15 19h.01" /></>} />,
-  pulse: <Icon path={<path d="M2 12h4l2.5-7 4 14 3-9 2.5 2H22" />} />,
   drive: <Icon path={<><path d="M22 12H2" /><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z" /><path d="M6 16h.01" /><path d="M10 16h.01" /></>} />,
   net: <Icon path={<><circle cx="12" cy="12" r="10" /><path d="M2 12h20" /><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20" /></>} />,
   chip: <Icon path={<><rect x="4" y="4" width="16" height="16" rx="2" /><rect x="9" y="9" width="6" height="6" /><path d="M15 2v2M9 2v2M15 20v2M9 20v2M2 15h2M2 9h2M20 15h2M20 9h2" /></>} />,
@@ -134,289 +133,6 @@ function RingGauge({ ratio, color, children }) {
         />
       </svg>
       <div className="ring-center">{children}</div>
-    </div>
-  );
-}
-
-/* ------------------------------- data flow ------------------------------- */
-// Realistic fiber-optic flow: a canvas particle system. Light particles stream
-// out of the connector, along five glowing fibers, with additive-blend bloom
-// and motion trails. Flow intensity is driven by the live push stream rate.
-const TAU = Math.PI * 2;
-
-const cubicPoint = (p0, p1, p2, p3, t) => {
-  const u = 1 - t;
-  return {
-    x: u * u * u * p0.x + 3 * u * u * t * p1.x + 3 * u * t * t * p2.x + t * t * t * p3.x,
-    y: u * u * u * p0.y + 3 * u * u * t * p1.y + 3 * u * t * t * p2.y + t * t * t * p3.y,
-  };
-};
-
-function FlowCanvas({ intensity, pushAt, color }) {
-  const canvasRef = useRef(null);
-  const intensityRef = useRef(intensity);
-  const pushAtRef = useRef(pushAt);
-  const colorRef = useRef(color);
-  intensityRef.current = intensity;
-  colorRef.current = color;
-  if (pushAt) pushAtRef.current = pushAt;
-
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    const ctx = canvas.getContext('2d');
-    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    let raf = 0;
-    let parts = [];
-    let fiberLayer = null;
-    let fibers = [];
-    let W = 0;
-    let H = 0;
-    let lastSeenPush = 0;
-    let last = performance.now();
-
-    const drawFiber = (c, f, w, style) => {
-      c.beginPath();
-      c.moveTo(f.p0.x, f.p0.y);
-      c.bezierCurveTo(f.p1.x, f.p1.y, f.p2.x, f.p2.y, f.p3.x, f.p3.y);
-      c.lineWidth = w;
-      c.strokeStyle = style;
-      c.stroke();
-    };
-
-    const roundRect = (c, x, y, w, h, r) => {
-      c.beginPath();
-      c.moveTo(x + r, y);
-      c.arcTo(x + w, y, x + w, y + h, r);
-      c.arcTo(x + w, y + h, x, y + h, r);
-      c.arcTo(x, y + h, x, y, r);
-      c.arcTo(x, y, x + w, y, r);
-      c.closePath();
-    };
-
-    const layout = () => {
-      const dpr = Math.min(2, window.devicePixelRatio || 1);
-      W = canvas.clientWidth;
-      H = canvas.clientHeight;
-      canvas.width = Math.max(1, Math.round(W * dpr));
-      canvas.height = Math.max(1, Math.round(H * dpr));
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-
-      const cy = H / 2;
-      const cx = W * 0.12;
-      const endX = W * 0.93;
-      fibers = [0.24, 0.38, 0.5, 0.62, 0.76].map((f) => {
-        const p0 = { x: cx, y: cy };
-        const p3 = { x: endX, y: H * f };
-        return {
-          p0,
-          p1: { x: W * 0.4, y: cy + (p3.y - cy) * 0.28 },
-          p2: { x: W * 0.68, y: cy + (p3.y - cy) * 0.72 },
-          p3,
-        };
-      });
-
-      // Static fiber layer (rendered once per resize).
-      fiberLayer = document.createElement('canvas');
-      fiberLayer.width = canvas.width;
-      fiberLayer.height = canvas.height;
-      const fctx = fiberLayer.getContext('2d');
-      fctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-
-      // Metallic connector housing (like the launcher icon).
-      const gx = W * 0.015;
-      const gw = W * 0.15;
-      const gy = H * 0.5 - H * 0.3;
-      const gh = H * 0.6;
-      const metal = fctx.createLinearGradient(gx, gy, gx + gw, gy);
-      metal.addColorStop(0, '#2b2f3b');
-      metal.addColorStop(0.5, '#3e4454');
-      metal.addColorStop(1, '#23262f');
-      roundRect(fctx, gx, gy, gw, gh, Math.min(10, gw * 0.16));
-      fctx.fillStyle = metal;
-      fctx.fill();
-      fctx.strokeStyle = `${colorRef.current}55`;
-      fctx.lineWidth = 1.2;
-      fctx.stroke();
-      // Inner opening where the fibers emerge.
-      const ox = gx + gw * 0.72;
-      const orx = gw * 0.24;
-      const ory = gh * 0.32;
-      const opening = fctx.createRadialGradient(ox, cy, 0, ox, cy, orx);
-      opening.addColorStop(0, '#0b0d13');
-      opening.addColorStop(1, '#181b23');
-      fctx.beginPath();
-      fctx.ellipse(ox, cy, orx, ory, 0, 0, TAU);
-      fctx.fillStyle = opening;
-      fctx.fill();
-      fctx.strokeStyle = `${colorRef.current}44`;
-      fctx.lineWidth = 1;
-      fctx.stroke();
-      fibers.forEach((f) => {
-        const sy = cy + (f.p3.y - cy) * 0.06;
-        fctx.beginPath();
-        fctx.arc(ox - orx * 0.4, sy, 1.4, 0, TAU);
-        fctx.fillStyle = `${colorRef.current}aa`;
-        fctx.fill();
-      });
-
-      // Fibers: outer glow, body, bright core.
-      fibers.forEach((f) => {
-        const grad = fctx.createLinearGradient(f.p0.x, f.p0.y, f.p3.x, f.p3.y);
-        grad.addColorStop(0, `${colorRef.current}cc`);
-        grad.addColorStop(1, '#8ea4ff');
-        drawFiber(fctx, f, 5.5, 'rgba(255,255,255,0.05)');
-        drawFiber(fctx, f, 2.4, 'rgba(255,255,255,0.10)');
-        drawFiber(fctx, f, 1.1, grad);
-        fctx.beginPath();
-        fctx.arc(f.p3.x, f.p3.y, 2.4, 0, TAU);
-        fctx.fillStyle = '#cfd8ff';
-        fctx.fill();
-      });
-    };
-
-    const spawn = (n, boost = 1) => {
-      for (let i = 0; i < n && parts.length < 320; i++) {
-        const f = fibers[(Math.random() * fibers.length) | 0];
-        parts.push({
-          f,
-          t: Math.random() * 0.1,
-          k: (0.82 + Math.random() * 0.4) * boost,
-          size: 0.9 + Math.random() * 1.7,
-          accent: Math.random() < 0.22,
-        });
-      }
-    };
-
-    const frame = (now) => {
-      const dt = Math.min(0.05, (now - last) / 1000);
-      last = now;
-      const inten = intensityRef.current;
-      const col = colorRef.current;
-
-      // Trail fade (keeps fibers crisp — they're redrawn on top each frame).
-      ctx.globalCompositeOperation = 'source-over';
-      ctx.fillStyle = 'rgba(10, 12, 18, 0.30)';
-      ctx.fillRect(0, 0, W, H);
-
-      // Breathing glow at the connector.
-      const pulse = 0.55 + 0.45 * Math.sin(now / 800);
-      ctx.globalCompositeOperation = 'lighter';
-      const hex = Math.round(70 * pulse).toString(16).padStart(2, '0');
-      const cg = ctx.createRadialGradient(W * 0.12, H / 2, 0, W * 0.12, H / 2, W * 0.1);
-      cg.addColorStop(0, `${col}${hex}`);
-      cg.addColorStop(1, 'rgba(0,0,0,0)');
-      ctx.fillStyle = cg;
-      ctx.fillRect(0, 0, W, H);
-
-      // Light particles streaming along the fibers.
-      const speed = (0.4 + inten) / 420; // fiber fraction per frame
-      for (const p of parts) {
-        p.t += speed * p.k;
-        if (p.t >= 1) {
-          p.dead = true;
-          continue;
-        }
-        const pt = cubicPoint(p.f.p0, p.f.p1, p.f.p2, p.f.p3, p.t);
-        const alpha = Math.min(1, p.t * 8) * Math.min(1, (1 - p.t) * 6);
-        const pc = p.accent ? '#7ee7ff' : col;
-        ctx.globalAlpha = alpha * 0.22; // halo
-        ctx.fillStyle = pc;
-        ctx.beginPath();
-        ctx.arc(pt.x, pt.y, p.size * 3, 0, TAU);
-        ctx.fill();
-        ctx.globalAlpha = alpha * 0.75; // body
-        ctx.beginPath();
-        ctx.arc(pt.x, pt.y, p.size, 0, TAU);
-        ctx.fill();
-        ctx.globalAlpha = alpha; // white-hot core
-        ctx.fillStyle = '#fff';
-        ctx.beginPath();
-        ctx.arc(pt.x, pt.y, p.size * 0.42, 0, TAU);
-        ctx.fill();
-      }
-      ctx.globalAlpha = 1;
-
-      // Crisp fiber layer on top.
-      ctx.globalCompositeOperation = 'source-over';
-      ctx.drawImage(fiberLayer, 0, 0);
-
-      parts = parts.filter((p) => !p.dead);
-
-      // Keep particle density ∝ flow intensity.
-      if (Math.random() < 0.05 + inten * 0.13) spawn(1 + ((Math.random() * 3) | 0));
-
-      // Burst on every incoming push — the cable visibly lights up.
-      const cur = pushAtRef.current;
-      if (cur && cur !== lastSeenPush) {
-        spawn(26, 1.7);
-        lastSeenPush = cur;
-      }
-
-      raf = requestAnimationFrame(frame);
-    };
-
-    layout();
-    if (reduced) {
-      // Static frame for reduced-motion users.
-      ctx.fillStyle = 'rgba(10,12,18,1)';
-      ctx.fillRect(0, 0, W, H);
-      for (let i = 0; i < 46; i++) spawn(1);
-      for (const p of parts) {
-        const pt = cubicPoint(p.f.p0, p.f.p1, p.f.p2, p.f.p3, Math.random());
-        ctx.globalAlpha = 0.55;
-        ctx.fillStyle = colorRef.current;
-        ctx.beginPath();
-        ctx.arc(pt.x, pt.y, p.size, 0, TAU);
-        ctx.fill();
-      }
-      ctx.globalAlpha = 1;
-      ctx.drawImage(fiberLayer, 0, 0);
-    } else {
-      raf = requestAnimationFrame(frame);
-    }
-
-    const ro = new ResizeObserver(() => {
-      layout();
-      parts = [];
-    });
-    ro.observe(canvas.parentElement);
-
-    return () => {
-      cancelAnimationFrame(raf);
-      ro.disconnect();
-    };
-  }, []);
-
-  return <canvas ref={canvasRef} className="flow-canvas" role="img" aria-label="animated data flow through a fiber optic cable" />;
-}
-
-function FlowWidget({ cable, pushMs, pushAt }) {
-  const v = cable.verdict || {};
-  const color = v.color || '#2997ff';
-  const live = cable.live_mb_per_sec ?? null;
-  const bench = cable.benchmark?.mb_per_sec ?? null;
-  const mb = live ?? bench ?? 0;
-  // Flow intensity tracks the live push stream rate (faster pushes → stronger
-  // flow); falls back to throughput scaling when there's no stream.
-  const syncing = pushMs != null && pushMs > 0;
-  const intensity = syncing
-    ? Math.min(1.6, Math.max(0.15, 0.25 + 900 / pushMs))
-    : Math.min(1.2, Math.max(0.15, 0.12 + mb / 400));
-  return (
-    <div className="widget-body flow-widget">
-      <FlowCanvas intensity={intensity} pushAt={pushAt} color={color} />
-      <div className="flow-stats">
-        <span>
-          flow rate <b style={{ color }}>{fmtMBs(live)} MB/s</b>
-        </span>
-        <span>link {cable.device?.speed_label || '—'}</span>
-        <span>full test {fmtMBs(bench)} MB/s</span>
-        <span className="flow-hint">
-          {syncing
-            ? `flow syncs with live stream · push every ${(pushMs / 1000).toFixed(1)}s`
-            : 'flow accelerates with data load'}
-        </span>
-      </div>
     </div>
   );
 }
@@ -689,7 +405,6 @@ function DiagnosisWidget({ cable }) {
 }
 
 const WIDGETS = [
-  { key: 'flow', title: 'Data Flow', icon: ICONS.pulse, render: ({ cable, pushMs, pushAt }) => <FlowWidget cable={cable} pushMs={pushMs} pushAt={pushAt} />, span: 2 },
   { key: 'cable', title: 'Cable Speed', icon: ICONS.usb, render: ({ cable, history }) => <CableWidget cable={cable} history={history} />, span: 2 },
   { key: 'capacity', title: 'Drive Capacity', icon: ICONS.drive, render: ({ cable }) => <CapacityWidget cable={cable} />, span: 2 },
   { key: 'memory', title: 'RAM Speed', icon: ICONS.chip, render: ({ memory }) => <MemoryWidget memory={memory} />, span: 2 },
@@ -714,7 +429,6 @@ export default function App() {
   const [flash, setFlash] = useState(false); // live-pill ripple on refresh
   const [removing, setRemoving] = useState(null); // widget mid-hide animation
   const gridRef = useRef(null);
-  const posRef = useRef({});
   const wsConnectedRef = useRef(false);
   const [order, setOrder] = useState(() => {
     const def = WIDGETS.map((w) => w.key);
@@ -727,7 +441,6 @@ export default function App() {
   const [dragKey, setDragKey] = useState(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const historyRef = useRef([]);
-  const pushTimesRef = useRef([]); // timestamps of incoming stream pushes
 
   useEffect(() => store.set('cs_order', order), [order]);
   useEffect(() => store.set('cs_hidden', [...hidden]), [hidden]);
@@ -749,11 +462,6 @@ export default function App() {
         ...historyRef.current.slice(-(HISTORY_MAX - 1)),
         { ts: Date.now(), live: json.cable?.live_mb_per_sec ?? null, watts: json.power?.live_watts ?? null },
       ];
-      const now = Date.now();
-      const prev = pushTimesRef.current[pushTimesRef.current.length - 1];
-      pushTimesRef.current = prev && now - prev < 10000
-        ? [...pushTimesRef.current, now].slice(-12)
-        : [now];
       } catch (err) {
         if (EMBEDDED) {
           setData(EMBEDDED);
@@ -817,11 +525,6 @@ export default function App() {
         ...historyRef.current.slice(-(HISTORY_MAX - 1)),
         { ts: Date.now(), live: json.cable?.live_mb_per_sec ?? null, watts: json.power?.live_watts ?? null },
       ];
-      const now = Date.now();
-      const prev = pushTimesRef.current[pushTimesRef.current.length - 1];
-      pushTimesRef.current = prev && now - prev < 10000
-        ? [...pushTimesRef.current, now].slice(-12)
-        : [now];
     };
     const connect = () => {
       if (stopped) return;
@@ -868,17 +571,7 @@ export default function App() {
   const visible = order.filter((k) => !hidden.has(k));
   const hiddenWidgets = WIDGETS.filter((w) => hidden.has(w.key));
 
-  const capturePositions = () => {
-    const map = {};
-    gridRef.current?.querySelectorAll('.widget').forEach((el) => {
-      const r = el.getBoundingClientRect();
-      map[el.dataset.key] = { left: r.left, top: r.top };
-    });
-    posRef.current = map;
-  };
-
   const reorder = (from, to) => {
-    capturePositions();
     setOrder((prev) => {
       const arr = prev.filter((k) => k !== from);
       const idx = arr.indexOf(to);
@@ -888,68 +581,12 @@ export default function App() {
   };
 
   const hideWidget = (key) => {
-    capturePositions();
     setRemoving(key);
     setTimeout(() => {
       setHidden((h) => new Set([...h, key]));
       setRemoving(null);
     }, 240);
   };
-
-  // FLIP: glide widgets into their new positions after reorder / hide.
-  useLayoutEffect(() => {
-    if (!gridRef.current) return undefined;
-    const els = gridRef.current.querySelectorAll('.widget');
-    const anims = [];
-    els.forEach((el) => {
-      const prev = posRef.current[el.dataset.key];
-      if (!prev) return;
-      const r = el.getBoundingClientRect();
-      const dx = prev.left - r.left;
-      const dy = prev.top - r.top;
-      if (Math.abs(dx) > 1 || Math.abs(dy) > 1) {
-        el.style.transition = 'none';
-        el.style.transform = `translate(${dx}px, ${dy}px)`;
-        anims.push(el);
-      }
-    });
-    posRef.current = {};
-    if (!anims.length) return undefined;
-    let raf1;
-    let raf2;
-    let cleanupT;
-    raf1 = requestAnimationFrame(() => {
-      raf2 = requestAnimationFrame(() => {
-        anims.forEach((el) => {
-          el.style.transition = 'transform 0.42s cubic-bezier(0.3, 0.7, 0.3, 1)';
-          el.style.transform = '';
-        });
-        cleanupT = setTimeout(() => {
-          anims.forEach((el) => {
-            el.style.transition = '';
-          });
-        }, 460);
-      });
-    });
-    return () => {
-      cancelAnimationFrame(raf1);
-      cancelAnimationFrame(raf2);
-      clearTimeout(cleanupT);
-    };
-  }, [order, hidden]);
-
-  // Median interval between incoming stream pushes — drives the Data Flow
-  // animation so it syncs with the real push rate (recomputed per push).
-  const pushRate = useMemo(() => {
-    const arr = pushTimesRef.current;
-    if (arr.length < 2) return { ms: null, at: null };
-    const gaps = [];
-    for (let i = 1; i < arr.length; i++) gaps.push(arr[i] - arr[i - 1]);
-    gaps.sort((a, b) => a - b);
-    return { ms: gaps[Math.floor(gaps.length / 2)] || null, at: arr[arr.length - 1] };
-  }, [data]);
-  const pushMs = pushRate.ms;
-  const pushAt = pushRate.at;
 
   const ctx = {
     cable: data?.cable || {},
@@ -959,8 +596,6 @@ export default function App() {
     testing,
     runFullTest,
     history: historyRef.current,
-    pushMs,
-    pushAt,
   };
   const live = data?.cable?.live_mb_per_sec;
 
@@ -1037,7 +672,6 @@ export default function App() {
                 key={key}
                 data-key={key}
                 className={`widget${w.span === 2 ? ' w-2' : ''}${dragKey === key ? ' dragging' : ''}${removing === key ? ' removing' : ''}`}
-                style={{ animationDelay: `${Math.min(i, 6) * 45}ms` }}
                 draggable
                 onDragStart={(e) => {
                   setDragKey(key);

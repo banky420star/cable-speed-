@@ -49,7 +49,6 @@ body {
   border-radius: 50%;
   filter: blur(90px);
   opacity: 0.5;
-  animation: drift 26s ease-in-out infinite alternate;
 }
 
 .aurora::before {
@@ -66,7 +65,6 @@ body {
   bottom: -22vw;
   right: -12vw;
   background: radial-gradient(circle, rgba(50, 215, 75, 0.22), transparent 65%);
-  animation-delay: -13s;
 }
 
 .aurora .blob {
@@ -78,16 +76,6 @@ body {
   border-radius: 50%;
   background: radial-gradient(circle, rgba(191, 90, 242, 0.16), transparent 65%);
   filter: blur(90px);
-  animation: drift 32s ease-in-out infinite alternate-reverse;
-}
-
-@keyframes drift {
-  0% {
-    transform: translate(0, 0) scale(1);
-  }
-  100% {
-    transform: translate(8vw, -6vh) scale(1.15);
-  }
 }
 
 #root {
@@ -365,50 +353,6 @@ header.top .subtitle {
 
 .widget-body {
   padding: 13px 15px 16px;
-}
-
-/* ------------------------------ data flow widget ------------------------------ */
-.flow-widget {
-  position: relative;
-}
-
-.flow-canvas {
-  width: 100%;
-  height: clamp(118px, 19vw, 158px);
-  display: block;
-  border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  background:
-    radial-gradient(120% 100% at 0% 50%, rgba(41, 151, 255, 0.08) 0%, rgba(8, 10, 16, 0) 60%),
-    rgba(8, 10, 16, 0.5);
-}
-
-.flow-stats {
-  display: flex;
-  align-items: baseline;
-  gap: 16px;
-  flex-wrap: wrap;
-  margin-top: 10px;
-  font-size: 12px;
-  color: var(--muted);
-}
-
-.flow-stats b {
-  font-size: 14px;
-  font-weight: 800;
-  font-variant-numeric: tabular-nums;
-}
-
-.flow-hint {
-  margin-left: auto;
-  font-size: 10.5px;
-  color: var(--muted2);
-}
-
-@media (max-width: 640px) {
-  .flow-hint {
-    margin-left: 0;
-  }
 }
 
 /* ---------------------------- cable live number ----------------------------- */
@@ -970,21 +914,6 @@ button.recheck .spin {
 }
 
 /* ------------------------------ micro animations ------------------------------ */
-.widget {
-  animation: widgetIn 0.45s cubic-bezier(0.3, 0.7, 0.3, 1) backwards;
-}
-
-@keyframes widgetIn {
-  from {
-    opacity: 0;
-    transform: translateY(10px) scale(0.98);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-}
-
 .widget.removing {
   animation: widgetOut 0.24s ease forwards;
   pointer-events: none;
@@ -1015,23 +944,10 @@ button.recheck:active {
   box-shadow: 0 4px 12px rgba(41, 151, 255, 0.3);
 }
 
-/* animated numbers: scale pop on change */
+/* animated numbers: smooth, no pop */
 .anim-num {
   display: inline-block;
   font-variant-numeric: tabular-nums;
-}
-
-.anim-num.pop {
-  animation: numpop 0.38s cubic-bezier(0.3, 0.7, 0.3, 1);
-}
-
-@keyframes numpop {
-  0% {
-    transform: scale(1.14);
-  }
-  100% {
-    transform: scale(1);
-  }
 }
 
 /* sparkline: line draws in, end dot pulses */
@@ -1063,59 +979,8 @@ button.recheck:active {
   }
 }
 
-/* battery bar: shimmer while charging */
-.batt-fill.charging {
-  position: relative;
-  overflow: hidden;
-}
 
-.batt-fill.charging::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(100deg, transparent 30%, rgba(255, 255, 255, 0.5) 50%, transparent 70%);
-  background-size: 220% 100%;
-  animation: shimmer 1.5s linear infinite;
-}
 
-@keyframes shimmer {
-  from {
-    background-position: 130% 0;
-  }
-  to {
-    background-position: -60% 0;
-  }
-}
-
-/* live pill: ripple flash on each refresh */
-.live-pill.flash {
-  animation: pillflash 0.75s ease;
-}
-
-@keyframes pillflash {
-  0% {
-    box-shadow: 0 0 0 0 rgba(50, 215, 75, 0.5);
-  }
-  100% {
-    box-shadow: 0 0 0 14px rgba(50, 215, 75, 0);
-  }
-}
-
-/* verdict badge pop-in */
-.badge-in {
-  animation: badgein 0.35s cubic-bezier(0.3, 0.7, 0.3, 1) backwards;
-}
-
-@keyframes badgein {
-  from {
-    opacity: 0;
-    transform: scale(0.8) translateY(3px);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1) translateY(0);
-  }
-}
 
 /* toggle switch */
 .toggle {
@@ -1196,10 +1061,6 @@ button.recheck:active {
   .grid {
     gap: 12px;
   }
-
-  .flow-stats {
-    gap: 10px 14px;
-  }
 }
 
 @media (max-width: 640px) {
@@ -1251,10 +1112,6 @@ button.recheck:active {
     gap: 12px;
   }
 
-  .flow-stats {
-    gap: 6px 12px;
-  }
-
   .net-divider {
     margin: 0 2px;
   }
@@ -1292,16 +1149,6 @@ button.recheck:active {
 
   .net-body {
     gap: 4px;
-  }
-
-  .flow-stats {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 5px;
-  }
-
-  .flow-hint {
-    margin-left: 0;
   }
 
   .widget-body {
