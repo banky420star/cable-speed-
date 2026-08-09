@@ -524,6 +524,81 @@ header.top .subtitle {
   text-align: center;
 }
 
+/* ------------------------------ desktop widget ------------------------------ */
+.desktop-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 8px;
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--muted2);
+  font-weight: 700;
+}
+
+.desktop-list {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.desktop-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  padding: 5px 8px;
+  border-radius: 8px;
+  cursor: grab;
+  transition: background 0.15s;
+}
+
+.desktop-row:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.desktop-row.dragging {
+  opacity: 0.4;
+  background: rgba(41, 151, 255, 0.1);
+}
+
+.desktop-icon {
+  display: inline-flex;
+  color: var(--blue);
+  flex-shrink: 0;
+}
+
+.desktop-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.desktop-size {
+  color: var(--muted2);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+  width: 52px;
+  text-align: right;
+}
+
+.desktop-time {
+  color: var(--muted2);
+  font-size: 10.5px;
+  width: 60px;
+  text-align: right;
+}
+
+.mini-grip {
+  opacity: 0.4;
+  cursor: grab;
+}
+
 /* ------------------------------ CPU widget ------------------------------ */
 .proc-top-name {
   max-width: 150px;

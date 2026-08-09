@@ -50,6 +50,8 @@ const ICONS = {
   drive: <Icon path={<><path d="M22 12H2" /><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z" /><path d="M6 16h.01" /><path d="M10 16h.01" /></>} />,
   net: <Icon path={<><circle cx="12" cy="12" r="10" /><path d="M2 12h20" /><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20" /></>} />,
   chip: <Icon path={<><rect x="4" y="4" width="16" height="16" rx="2" /><rect x="9" y="9" width="6" height="6" /><path d="M15 2v2M9 2v2M15 20v2M9 20v2M2 15h2M2 9h2M20 15h2M20 9h2" /></>} />,
+  folder: <Icon path={<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />} />,
+  file: <Icon path={<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z M14 2v6h6" />} />,
 };
 
 /* ------------------------------ small helpers ------------------------------ */
@@ -57,6 +59,15 @@ const fmtMBs = (v) => (v == null ? '—' : v >= 100 ? String(Math.round(v)) : v.
 const fmtWatts = (v) => (v == null ? '—' : `${v.toFixed(1)} W`);
 const fmtGbps = (mbps) => (mbps ? `${(mbps / 1000).toFixed(1)} Gbps` : '—');
 const fmtGB = (v) => (v == null ? '—' : `${v} GB`);
+const fmtBytes = (b) => (b == null ? '' : b >= 1e9 ? `${(b / 1e9).toFixed(1)} GB` : b >= 1e6 ? `${(b / 1e6).toFixed(1)} MB` : b >= 1e3 ? `${(b / 1e3).toFixed(0)} KB` : `${b} B`);
+const relTime = (iso) => {
+  if (!iso) return '';
+  const s = (Date.now() - new Date(iso).getTime()) / 1000;
+  if (s < 60) return 'just now';
+  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
+  return `${Math.floor(s / 86400)}d ago`;
+};
 
 function AnimatedNumber({ value, decimals = 0, duration = 700 }) {
   const [display, setDisplay] = useState(value);
@@ -266,6 +277,57 @@ function MemoryWidget({ memory, history, purgeMemory, purging }) {
             {purging ? 'Clearing…' : 'Clear cached data'}
           </button>
           <span className="purge-hint">flushes inactive memory · asks for your password</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DesktopWidget({ desktop }) {
+  const items = desktop?.items || [];
+  const [order, setOrder] = useState(() => store.get('cs_desktop_order', []));
+  const [drag, setDrag] = useState(null);
+  useEffect(() => store.set('cs_desktop_order', order), [order]);
+  const ordered = [
+    ...order.map((n) => items.find((i) => i.name === n)).filter(Boolean),
+    ...items.filter((i) => !order.includes(i.name)),
+  ];
+  const drop = (to) => {
+    if (!drag || drag === to) return setDrag(null);
+    setOrder((prev) => {
+      const arr = prev.filter((n) => n !== drag);
+      const idx = arr.indexOf(to);
+      arr.splice(idx < 0 ? arr.length : idx, 0, drag);
+      return arr;
+    });
+    setDrag(null);
+  };
+  return (
+    <div className="widget w-2">
+      <div className="widget-body">
+        <div className="desktop-head">
+          <span>~/Desktop · {desktop?.count ?? items.length} items</span>
+          <span className="spark-live">drag to pin · live</span>
+        </div>
+        <div className="desktop-list">
+          {ordered.length === 0 && <div className="proc-empty">{desktop?.error ? `desktop unavailable: ${desktop.error}` : 'desktop is empty'}</div>}
+          {ordered.map((it) => (
+            <div
+              key={it.name}
+              className={`desktop-row${drag === it.name ? ' dragging' : ''}`}
+              draggable
+              onDragStart={() => setDrag(it.name)}
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={() => drop(it.name)}
+              title={`${it.name} · ${it.dir ? 'folder' : 'file'}`}
+            >
+              <span className="desktop-icon">{it.dir ? ICONS.folder : ICONS.file}</span>
+              <span className="desktop-name">{it.name}</span>
+              <span className="desktop-size">{it.dir ? 'folder' : fmtBytes(it.size_bytes)}</span>
+              <span className="desktop-time">{relTime(it.modified)}</span>
+              <span className="grip mini-grip">{ICONS.grip}</span>
+            </div>
+          ))}
         </div>
       </div>
     </div>
@@ -508,6 +570,7 @@ const WIDGETS = [
   { key: 'capacity', title: 'Drive Capacity', icon: ICONS.drive, render: ({ cable }) => <CapacityWidget cable={cable} />, span: 2 },
   { key: 'memory', title: 'RAM Speed', icon: ICONS.chip, render: ({ memory, history, purgeMemory, purging }) => <MemoryWidget memory={memory} history={history} purgeMemory={purgeMemory} purging={purging} />, span: 2 },
   { key: 'cpu', title: 'CPU', icon: ICONS.chip, render: ({ cpu, history }) => <CpuWidget cpu={cpu} history={history} />, span: 2 },
+  { key: 'desktop', title: 'Desktop', icon: ICONS.folder, render: ({ desktop }) => <DesktopWidget desktop={desktop} />, span: 2 },
   { key: 'internet', title: 'Internet Speed', icon: ICONS.net, render: ({ internet, history }) => <InternetWidget internet={internet} history={history} /> },
   { key: 'battery', title: 'Battery', icon: ICONS.battery, render: ({ power, history }) => <BatteryWidget power={power} history={history} /> },
   { key: 'charge', title: 'Charge Rate', icon: ICONS.bolt, render: ({ power, history }) => <ChargeWidget power={power} history={history} /> },
@@ -732,6 +795,7 @@ export default function App() {
     internet: data?.internet || {},
     memory: data?.memory || {},
     cpu: data?.cpu || {},
+    desktop: data?.desktop || {},
     testing,
     runFullTest,
     purgeMemory,

@@ -29,6 +29,7 @@ const { exec } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const os = require('os');
 
 const PORT = Number(process.env.CABLE_MONITOR_PORT || 8787);
 const DIST = path.join(__dirname, 'dist');
@@ -322,6 +323,39 @@ async function internetStatus() {
     down_mb_per_sec: Math.round((downBps / 1e6) * 100) / 100,
     up_mb_per_sec: Math.round((upBps / 1e6) * 100) / 100,
   };
+}
+
+// ---------- Desktop listing ----------
+function desktopStatus() {
+  const dir = path.join(os.homedir(), 'Desktop');
+  try {
+    const entries = fs.readdirSync(dir, { withFileTypes: true });
+    const items = entries.slice(0, 60).map((e) => {
+      let size = null;
+      let mtime = null;
+      try {
+        const st = fs.statSync(path.join(dir, e.name));
+        size = st.size;
+        mtime = st.mtimeMs;
+      } catch {
+        /* ignore unreadable entries */
+      }
+      return {
+        name: e.name,
+        dir: e.isDirectory(),
+        size_bytes: size,
+        modified: mtime ? new Date(mtime).toISOString() : null,
+      };
+    });
+    items.sort(
+      (a, b) =>
+        (a.dir === b.dir ? 0 : a.dir ? -1 : 1) ||
+        String(b.modified || '').localeCompare(String(a.modified || ''))
+    );
+    return { path: dir, count: items.length, items };
+  } catch (err) {
+    return { path: dir, count: 0, items: [], error: String((err && err.message) || err) };
+  }
 }
 
 // ---------- CPU / top processes ----------
@@ -710,7 +744,7 @@ async function statusPayload({ withBenchmark = false, volume = null } = {}) {
     memoryStatus(),
     cpuStatus(),
   ]);
-  return { ts: new Date().toISOString(), cable, power, internet, memory, cpu };
+  return { ts: new Date().toISOString(), cable, power, internet, memory, cpu, desktop: desktopStatus() };
 }
 
 // Last benchmark per volume, so live pushes keep showing the result.
@@ -797,6 +831,9 @@ const server = http.createServer(async (req, res) => {
     }
     if (url.pathname === '/api/cpu') {
       return sendJson(200, await cpuStatus());
+    }
+    if (url.pathname === '/api/desktop') {
+      return sendJson(200, desktopStatus());
     }
     if (url.pathname === '/api/purge' && req.method === 'POST') {
       // Flush inactive memory caches. macOS pops the native admin prompt.

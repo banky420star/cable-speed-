@@ -206,6 +206,12 @@ test('GET /api/status returns cable + power + internet payloads', async () => {
   assert.ok('load_pct' in json.cpu);
   assert.ok('cores' in json.cpu);
   assert.ok(Array.isArray(json.cpu.processes));
+  assert.ok(json.desktop && typeof json.desktop === 'object', 'desktop payload present');
+  assert.ok('path' in json.desktop);
+  assert.ok(Array.isArray(json.desktop.items));
+  for (const it of json.desktop.items) {
+    assert.ok('name' in it && 'dir' in it && 'size_bytes' in it);
+  }
 });
 
 test('GET /api/cable-speed returns the cable object at top level', async () => {
