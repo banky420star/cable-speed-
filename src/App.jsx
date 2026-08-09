@@ -48,12 +48,15 @@ const ICONS = {
   close: <Icon path={<path d="M6 6l12 12M18 6 6 18" />} />,
   grip: <Icon path={<><path d="M9 5h.01M15 5h.01M9 12h.01M15 12h.01M9 19h.01M15 19h.01" /></>} />,
   pulse: <Icon path={<path d="M2 12h4l2.5-7 4 14 3-9 2.5 2H22" />} />,
+  drive: <Icon path={<><path d="M22 12H2" /><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z" /><path d="M6 16h.01" /><path d="M10 16h.01" /></>} />,
+  net: <Icon path={<><circle cx="12" cy="12" r="10" /><path d="M2 12h20" /><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20" /></>} />,
 };
 
 /* ------------------------------ small helpers ------------------------------ */
 const fmtMBs = (v) => (v == null ? '—' : v >= 100 ? String(Math.round(v)) : v.toFixed(1));
 const fmtWatts = (v) => (v == null ? '—' : `${v.toFixed(1)} W`);
 const fmtGbps = (mbps) => (mbps ? `${(mbps / 1000).toFixed(1)} Gbps` : '—');
+const fmtGB = (v) => (v == null ? '—' : `${v} GB`);
 
 function AnimatedNumber({ value, decimals = 0, duration = 700 }) {
   const [display, setDisplay] = useState(value);
@@ -417,20 +420,39 @@ function FlowWidget({ cable, pushMs, pushAt }) {
   );
 }
 
-function CableWidget({ cable }) {
+function CableWidget({ cable, history }) {
   const v = cable.verdict || {};
   const device = cable.device;
   const color = v.color || '#a1a1a6';
+  const live = cable.live_mb_per_sec ?? null;
+  // Cable speed as a live, fluctuating number: real-time data rate in Mbps.
+  const liveMbps = live == null ? null : live * 8;
+  const linkMbps = device?.speed_mbps ?? null;
+  const series = history.map((h) => (h.live == null ? null : h.live * 8)).filter((x) => x != null);
   return (
     <div className="widget w-2" data-color={color}>
       <div className="widget-body cable-body">
-        <span key={v.title || 'unknown'} className="badge badge-in" style={{ background: `${color}1f`, color, border: `1px solid ${color}55` }}>
-          {v.title || 'Unknown'}
-        </span>
+        <div className="cable-head">
+          <span key={v.title || 'unknown'} className="badge badge-in" style={{ background: `${color}1f`, color, border: `1px solid ${color}55` }}>
+            {v.title || 'Unknown'}
+          </span>
+          <span className="live-tag"><span className="dot" /> live</span>
+        </div>
         <div className="device">
           {device?.product || 'No external drive detected'}{' '}
           {device?.vendor && <span className="vendor">· {device.vendor}</span>}
         </div>
+        <div className="cable-live-num" style={{ color: liveMbps != null && liveMbps > 0 ? color : 'var(--muted2)' }}>
+          {liveMbps == null ? (
+            <span className="cable-static">{linkMbps ? `${linkMbps} Mbps` : '—'}</span>
+          ) : (
+            <>
+              <AnimatedNumber value={liveMbps} decimals={liveMbps < 100 ? 1 : 0} />
+              <span className="unit">Mbps</span>
+            </>
+          )}
+        </div>
+        <Sparkline points={series} max={linkMbps || 1000} color={color} />
         <div className="meta">
           {device?.speed_label ? `${device.speed_label} link · ${fmtGbps(device.speed_mbps)}` : 'Link: unknown'}
           {' · '}
@@ -442,46 +464,67 @@ function CableWidget({ cable }) {
   );
 }
 
-function ThroughputWidget({ cable, history }) {
-  const v = cable.verdict || {};
-  const color = v.color || '#2997ff';
-  const live = cable.live_mb_per_sec ?? null;
-  const bench = cable.benchmark?.mb_per_sec ?? null;
-  const capable = cable.capable?.mb_per_sec ?? null;
-  const display = live ?? bench;
-  const ratio = capable ? (display ?? 0) / capable : 0;
-  const series = history.map((h) => h.live).filter((x) => x != null);
+function CapacityWidget({ cable }) {
+  const cap = cable.capacity || null;
+  const pct = cap?.percent_used ?? 0;
+  const color = cap
+    ? pct > 90 ? '#ff453a' : pct > 75 ? '#ff9f0a' : '#32d74b'
+    : 'var(--muted2)';
   return (
     <div className="widget w-2">
       <div className="widget-body">
         <div className="through-row">
-          <RingGauge ratio={ratio} color={color}>
-            <div className="g-num" style={{ color }}>
-              {display == null ? '—' : <AnimatedNumber value={display} decimals={display < 100 ? 1 : 0} />}
-            </div>
-            <div className="g-unit">MB/s</div>
+          <RingGauge ratio={pct / 100} color={color}>
+            <div className="g-num" style={{ color }}>{cap ? `${pct}%` : '—'}</div>
+            <div className="g-unit">used</div>
           </RingGauge>
           <div className="through-meta">
             <div className="stat-line">
-              <span className="k">live I/O</span>
-              <span className="val">{fmtMBs(live)} MB/s</span>
+              <span className="k">total</span>
+              <span className="val">{fmtGB(cap?.total_gb)}</span>
             </div>
             <div className="stat-line">
-              <span className="k">full test</span>
-              <span className="val">{fmtMBs(bench)} MB/s</span>
+              <span className="k">used</span>
+              <span className="val" style={{ color }}>{fmtGB(cap?.used_gb)}</span>
             </div>
             <div className="stat-line">
-              <span className="k">capable</span>
-              <span className="val" style={{ color: 'var(--blue)' }}>{fmtMBs(capable)} MB/s</span>
+              <span className="k">free</span>
+              <span className="val" style={{ color: 'var(--blue)' }}>{fmtGB(cap?.free_gb)}</span>
             </div>
           </div>
         </div>
-        <div className="spark-head">
-          <span>Throughput history (live)</span>
-          <span className="spark-live">{series.length ? `last ${series.length} samples` : 'waiting for data…'}</span>
+        <div className="cap-bar">
+          <span className="cap-fill" style={{ width: `${Math.min(100, pct)}%`, background: color }} />
         </div>
-        <Sparkline points={series} max={capable || 1000} color={color} />
       </div>
+    </div>
+  );
+}
+
+function InternetWidget({ internet }) {
+  const down = internet?.down_mbps ?? null;
+  const up = internet?.up_mbps ?? null;
+  const iface = internet?.interface;
+  return (
+    <div className="widget">
+      <div className="widget-body net-body">
+        <div className="net-col">
+          <span className="net-arrow down">↓</span>
+          <div className="net-num" style={{ color: 'var(--blue)' }}>
+            {down == null ? '—' : <AnimatedNumber value={down} decimals={down < 100 ? 1 : 0} />}
+          </div>
+          <div className="net-label">download <b>Mbps</b></div>
+        </div>
+        <div className="net-divider" />
+        <div className="net-col">
+          <span className="net-arrow up">↑</span>
+          <div className="net-num" style={{ color: 'var(--green)' }}>
+            {up == null ? '—' : <AnimatedNumber value={up} decimals={up < 100 ? 1 : 0} />}
+          </div>
+          <div className="net-label">upload <b>Mbps</b></div>
+        </div>
+      </div>
+      <div className="net-foot">{iface ? `live via ${iface}` : 'no active network interface'} · pushes update every few seconds</div>
     </div>
   );
 }
@@ -592,8 +635,9 @@ function DiagnosisWidget({ cable }) {
 
 const WIDGETS = [
   { key: 'flow', title: 'Data Flow', icon: ICONS.pulse, render: ({ cable, pushMs, pushAt }) => <FlowWidget cable={cable} pushMs={pushMs} pushAt={pushAt} />, span: 2 },
-  { key: 'cable', title: 'Cable Speed', icon: ICONS.usb, render: ({ cable }) => <CableWidget cable={cable} />, span: 2 },
-  { key: 'throughput', title: 'Live Throughput', icon: ICONS.gauge, render: ({ cable, history }) => <ThroughputWidget cable={cable} history={history} />, span: 2 },
+  { key: 'cable', title: 'Cable Speed', icon: ICONS.usb, render: ({ cable, history }) => <CableWidget cable={cable} history={history} />, span: 2 },
+  { key: 'capacity', title: 'Drive Capacity', icon: ICONS.drive, render: ({ cable }) => <CapacityWidget cable={cable} />, span: 2 },
+  { key: 'internet', title: 'Internet Speed', icon: ICONS.net, render: ({ internet }) => <InternetWidget internet={internet} /> },
   { key: 'battery', title: 'Battery', icon: ICONS.battery, render: ({ power }) => <BatteryWidget power={power} /> },
   { key: 'charge', title: 'Charge Rate', icon: ICONS.bolt, render: ({ power }) => <ChargeWidget power={power} /> },
   { key: 'charger', title: 'Charger', icon: ICONS.plug, render: ({ power }) => <ChargerWidget power={power} /> },
@@ -854,6 +898,7 @@ export default function App() {
   const ctx = {
     cable: data?.cable || {},
     power: data?.power || {},
+    internet: data?.internet || {},
     testing,
     runFullTest,
     history: historyRef.current,

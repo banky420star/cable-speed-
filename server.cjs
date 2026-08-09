@@ -277,10 +277,80 @@ async function enumerateDrives() {
       disk: await diskFor(vol),
       protocol: plistStr(out, 'Protocol') || null,
       removable: /<key>Removable<\/key>\s*<true\/>/.test(out),
+      capacity: await diskCapacity(vol),
     });
   }
   _drivesCache = { ts: Date.now(), drives };
   return drives;
+}
+
+// ---------- Internet speed (netstat -ib deltas) ----------
+let _netPrev = null; // { ts, ibytes, obytes, iface }
+function parseNetstat(out, iface) {
+  for (const line of out.split('\n')) {
+    const f = line.trim().split(/\s+/);
+    if (f[0] === iface && f.length > 10) {
+      const ib = Number(f[6]);
+      const ob = Number(f[9]);
+      if (Number.isFinite(ib) && Number.isFinite(ob)) return { ibytes: ib, obytes: ob };
+    }
+  }
+  return null;
+}
+
+// Real-time up/down speed: sample the default interface's cumulative byte
+// counters, then report the delta between consecutive samples.
+async function internetStatus() {
+  const empty = { interface: null, down_mbps: null, up_mbps: null, down_mb_per_sec: null, up_mb_per_sec: null };
+  const route = await run('route -n get default 2>/dev/null');
+  const iface = ((route.stdout || '').match(/interface:\s*(\S+)/) || [])[1] || null;
+  if (!iface) return empty;
+  const r = await run('netstat -ib 2>/dev/null');
+  const now = parseNetstat(r.stdout || '', iface);
+  const prev = _netPrev && _netPrev.iface === iface ? _netPrev : null;
+  const nowMs = Date.now();
+  if (now) _netPrev = { ...now, iface, ts: nowMs };
+  if (!now || !prev) return { ...empty, interface: iface }; // first sample: no delta yet
+  const secs = Math.max(0.1, (nowMs - prev.ts) / 1000);
+  const downBps = Math.max(0, (now.ibytes - prev.ibytes) / secs);
+  const upBps = Math.max(0, (now.obytes - prev.obytes) / secs);
+  const mbps = (bps) => Math.round((bps * 8) / 1e6 * 10) / 10;
+  return {
+    interface: iface,
+    down_mbps: mbps(downBps),
+    up_mbps: mbps(upBps),
+    down_mb_per_sec: Math.round((downBps / 1e6) * 100) / 100,
+    up_mb_per_sec: Math.round((upBps / 1e6) * 100) / 100,
+  };
+}
+
+// ---------- Drive capacity (df -k) ----------
+function parseDF(out, volume) {
+  for (const line of out.split('\n')) {
+    const t = line.trim();
+    if (!t.startsWith('/dev/')) continue;
+    if (!t.endsWith(volume) && !t.endsWith(volume + '/')) continue;
+    const f = t.split(/\s+/);
+    if (f.length < 5) continue;
+    const totalKb = Number(f[1]);
+    const usedKb = Number(f[2]);
+    const availKb = Number(f[3]);
+    const pct = parseInt(f[4], 10);
+    if (![totalKb, usedKb, availKb].every(Number.isFinite)) return null;
+    const gb = (kb) => Math.round((kb / 1048576) * 10) / 10;
+    return {
+      total_gb: gb(totalKb),
+      used_gb: gb(usedKb),
+      free_gb: gb(availKb),
+      percent_used: Number.isFinite(pct) ? pct : null,
+    };
+  }
+  return null;
+}
+
+async function diskCapacity(volume) {
+  const r = await run(`df -k "${volume}" 2>/dev/null`);
+  return parseDF(r.stdout || '', volume);
 }
 
 // ---------- Charging / power ----------
@@ -486,6 +556,7 @@ async function cableStatus({ withBenchmark = false, volume: wantVolume = null } 
     disk: disk || null,
     live_mb_per_sec: live,
     drives,
+    capacity: primary ? primary.capacity : null,
     benchmark: bench,
     bench_file: benchFile,
     capable: {
@@ -503,8 +574,12 @@ async function powerStatus() {
 }
 
 async function statusPayload({ withBenchmark = false, volume = null } = {}) {
-  const [cable, power] = await Promise.all([cableStatus({ withBenchmark, volume }), powerStatus()]);
-  return { ts: new Date().toISOString(), cable, power };
+  const [cable, power, internet] = await Promise.all([
+    cableStatus({ withBenchmark, volume }),
+    powerStatus(),
+    internetStatus(),
+  ]);
+  return { ts: new Date().toISOString(), cable, power, internet };
 }
 
 // Last benchmark per volume, so live pushes keep showing the result.
@@ -613,4 +688,4 @@ if (require.main === module) {
 }
 
 // Only listens when run directly; exports the pure helpers for unit tests.
-module.exports = { parseIOReg, wsAccept, encodeFrame, USB_SPEEDS };
+module.exports = { parseIOReg, wsAccept, encodeFrame, USB_SPEEDS, parseNetstat, parseDF };

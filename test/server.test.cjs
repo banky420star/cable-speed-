@@ -7,7 +7,7 @@ const crypto = require('node:crypto');
 const path = require('node:path');
 
 const PROJECT = path.join(__dirname, '..');
-const { parseIOReg, wsAccept, encodeFrame, USB_SPEEDS } = require(path.join(PROJECT, 'server.cjs'));
+const { parseIOReg, wsAccept, encodeFrame, USB_SPEEDS, parseNetstat, parseDF } = require(path.join(PROJECT, 'server.cjs'));
 
 // ------------------------------ unit tests ------------------------------
 
@@ -51,6 +51,29 @@ test('USB_SPEEDS maps the negotiated speed codes', () => {
   assert.equal(USB_SPEEDS[2].label, 'USB 2.0');
   assert.equal(USB_SPEEDS[2].mbps, 480);
   assert.equal(USB_SPEEDS[4].mbps, 10000);
+});
+
+test('parseNetstat reads the default-interface byte counters', () => {
+  const out = [
+    'Name       Mtu   Network       Address            Ipkts Ierrs     Ibytes    Opkts Oerrs     Obytes  Coll',
+    'en0        1500  <Link#11>   de:51:25:66:35:e7  3404620     0 3411961718  2251782     0 1807932548     0',
+    'en0        1500  192.168.1     mac.home         3404620     - 3411961718  2251782     - 1807932548     -',
+  ].join('\n');
+  assert.deepEqual(parseNetstat(out, 'en0'), { ibytes: 3411961718, obytes: 1807932548 });
+  assert.equal(parseNetstat(out, 'en7'), null);
+});
+
+test('parseDF reads capacity from a df -k row', () => {
+  const out = [
+    'Filesystem   1024-blocks      Used Available Capacity iused      ifree %iused  Mounted on',
+    '/dev/disk5s1   488352768 366996612 121199080    76%  578806 1211990800    0%   /Volumes/AI_DRIVE',
+  ].join('\n');
+  const cap = parseDF(out, '/Volumes/AI_DRIVE');
+  assert.equal(cap.percent_used, 76);
+  assert.equal(cap.total_gb, 465.7); // 488352768 KiB / 1048576
+  assert.equal(cap.used_gb, 350);
+  assert.equal(cap.free_gb, 115.6);
+  assert.equal(parseDF(out, '/Volumes/MISSING'), null);
 });
 
 // --------------------------- integration tests ---------------------------
@@ -112,15 +135,27 @@ after(() => {
   if (child) child.kill();
 });
 
-test('GET /api/status returns a cable + power payload', async () => {
+test('GET /api/status returns cable + power + internet payloads', async () => {
   const r = await httpGet(port, '/api/status');
   assert.equal(r.status, 200);
   const json = JSON.parse(r.body);
   assert.ok(json.ts, 'has a timestamp');
   assert.ok(json.cable && typeof json.cable === 'object');
   assert.ok(json.power && typeof json.power === 'object');
+  assert.ok(json.internet && typeof json.internet === 'object');
+  for (const k of ['down_mbps', 'up_mbps', 'down_mb_per_sec', 'up_mb_per_sec', 'interface']) {
+    assert.ok(k in json.internet, `internet.${k} present`);
+  }
+  // waitReady() above primed the first netstat sample, so this call must have
+  // real deltas (regression: a missing timestamp made these NaN → null).
+  assert.equal(typeof json.internet.down_mbps, 'number', 'down_mbps is a number');
+  assert.equal(typeof json.internet.up_mbps, 'number', 'up_mbps is a number');
   assert.ok(Array.isArray(json.cable.drives));
   assert.ok('live_mb_per_sec' in json.cable);
+  assert.ok('capacity' in json.cable, 'capacity key present (may be null without a drive)');
+  for (const d of json.cable.drives) {
+    assert.ok('capacity' in d, `drive ${d.name} carries capacity`);
+  }
 });
 
 test('GET /api/cable-speed returns the cable object at top level', async () => {

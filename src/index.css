@@ -410,6 +410,140 @@ header.top .subtitle {
   }
 }
 
+/* ---------------------------- cable live number ----------------------------- */
+.cable-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.live-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--green);
+}
+
+.live-tag .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--green);
+  box-shadow: 0 0 6px var(--green);
+  animation: dotpulse 1.8s ease-in-out infinite;
+}
+
+.cable-live-num {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  margin: 6px 0 4px;
+  font-size: 46px;
+  line-height: 1;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  transition: color 0.4s;
+}
+
+.cable-live-num .unit {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--muted2);
+}
+
+.cable-static {
+  font-size: 30px;
+}
+
+.cable-body .sparkline {
+  margin: 8px 0 10px;
+}
+
+/* ------------------------------ capacity bar -------------------------------- */
+.cap-bar {
+  height: 8px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.07);
+  overflow: hidden;
+  margin-top: 12px;
+}
+
+.cap-fill {
+  display: block;
+  height: 100%;
+  border-radius: 6px;
+  transition: width 0.9s cubic-bezier(0.3, 0.7, 0.3, 1);
+  box-shadow: 0 0 10px currentColor;
+}
+
+/* ------------------------------ internet widget ------------------------------ */
+.net-body {
+  display: flex;
+  align-items: center;
+  justify-content: space-around;
+  gap: 8px;
+  padding-bottom: 8px;
+}
+
+.net-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  min-width: 0;
+}
+
+.net-arrow {
+  font-size: 20px;
+  line-height: 1;
+  font-weight: 800;
+}
+
+.net-arrow.down {
+  color: var(--blue);
+}
+
+.net-arrow.up {
+  color: var(--green);
+}
+
+.net-num {
+  font-size: 30px;
+  font-weight: 800;
+  line-height: 1.05;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+  white-space: nowrap;
+}
+
+.net-label {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.net-label b {
+  color: var(--muted2);
+  font-weight: 700;
+}
+
+.net-divider {
+  width: 1px;
+  align-self: stretch;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.net-foot {
+  padding: 0 15px 12px;
+  font-size: 10.5px;
+  color: var(--muted2);
+  text-align: center;
+}
+
 /* ------------------------------ widget contents ------------------------------ */
 .badge {
   display: inline-block;

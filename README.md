@@ -2,10 +2,13 @@
 
 A macOS-only React dashboard that shows, in real time:
 
-- **Cable speed** — the negotiated USB link speed of your external drive
-  (USB 2.0 / 3.x / 3.2 Gen 2) read from `ioreg`.
-- **Live throughput (MB/s)** — actual disk I/O sampled every second from
-  `iostat`, so you watch the drive work in real time.
+- **Cable speed** — a live, fluctuating number: the real-time data rate
+  through the USB port (Mbps), plus the negotiated link speed (USB 2.0 /
+  3.x / 3.2 Gen 2) read from `ioreg`.
+- **Drive capacity** — total / used / free space and % used per drive from
+  `df`, with a live gauge.
+- **Internet speed** — live upload and download in Mbps, sampled from
+  `netstat -ib` counter deltas on the default interface.
 - **Full speed test** — an on-demand `dd` read benchmark that measures the
   drive's real maximum read speed.
 - **Charging** — charger wattage, battery %, live charge rate in watts
