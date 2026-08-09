@@ -1,11 +1,16 @@
 import Cocoa
 import WebKit
 
+/// PID of the server this app instance started (or -1 if it reused one).
+/// Set off the main thread; read on the main thread when quitting.
+var startedServerPID: pid_t = -1
+
 // ---------------------------------------------------------------------------
 // Cable Speed Monitor — native macOS app.
 // Opens the dashboard in its own WebKit window (no browser). Ensures the API
-// server on :8787 is running first, starting it from this bundle's project
-// folder when needed.
+// server on :8787 is running first — preferring the runtime embedded in this
+// bundle (Contents/Resources/runtime), so the app is transportable: copy the
+// .app anywhere and it works, as long as Node.js is installed.
 // ---------------------------------------------------------------------------
 
 /// Server check + startup. Runs off the main thread (no UI state).
@@ -33,6 +38,7 @@ func ensureServerRunning() -> Bool {
     } catch {
         return false
     }
+    startedServerPID = proc.processIdentifier
 
     // Wait (max ~15s) for the server to answer.
     for _ in 0..<30 {
@@ -59,14 +65,17 @@ private func serverResponds() -> Bool {
 }
 
 private func findProjectDirectory() -> URL? {
+    // 1) Embedded runtime — makes the .app transportable (works from anywhere).
+    // 2) The folder the .app lives in (dev checkout).
+    // 3) This Mac's known project folder (legacy).
     let candidates = [
+        Bundle.main.resourceURL?.appendingPathComponent("runtime"),
         Bundle.main.bundleURL.deletingLastPathComponent(),
         URL(fileURLWithPath: "/Volumes/AI_DRIVE/untitled folder"),
     ]
     for dir in candidates {
-        if FileManager.default.fileExists(
-            atPath: dir.appendingPathComponent("server.cjs").path
-        ) {
+        if let dir = dir,
+           FileManager.default.fileExists(atPath: dir.appendingPathComponent("server.cjs").path) {
             return dir
         }
     }
@@ -74,6 +83,12 @@ private func findProjectDirectory() -> URL? {
 }
 
 private func findNodeBinary() -> URL? {
+    // A Node binary bundled inside the app (Contents/Resources/runtime/node)
+    // makes the .app fully standalone — no install required on the target Mac.
+    if let bundled = Bundle.main.resourceURL?.appendingPathComponent("runtime/node"),
+       FileManager.default.isExecutableFile(atPath: bundled.path) {
+        return bundled
+    }
     let candidates = [
         "/opt/homebrew/opt/node/bin/node",
         "/opt/homebrew/bin/node",
@@ -110,6 +125,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKUIDelegate {
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         true
+    }
+
+    // If this app instance started the server (transportable mode), stop it on
+    // quit. When the LaunchAgent is providing the server, we leave it alone.
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        if startedServerPID > 0 {
+            kill(startedServerPID, SIGTERM)
+        }
+        return .terminateNow
     }
 
     // MARK: - UI

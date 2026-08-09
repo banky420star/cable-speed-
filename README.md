@@ -52,6 +52,26 @@ Rebuild it from source any time:
 The Swift source, build script, and icon live in the repo; the built `.app`
 bundle is git-ignored (it's a local artifact).
 
+### Packaging for transport
+
+`build-app.sh` embeds the runtime payload (`server.cjs` + the built `dist/`
+dashboard) into `Contents/Resources/runtime/`, so the `.app` is portable:
+copy it to any Mac (or a USB stick) and double-click — the launcher finds the
+embedded runtime first and serves the dashboard from inside the bundle, no
+project folder required. Verified by copying the app to a clean directory and
+launching it there.
+
+Two caveats for the target Mac:
+
+- **Node.js must be installed** (the launcher looks in the standard homebrew
+  `/usr/local` locations). To make it fully standalone, drop a `node` binary
+  into `Contents/Resources/runtime/node` and the launcher will pick it up.
+- The app binds **port 8787**; if something else already answers there, it
+  opens the dashboard pointing at that server instead of starting its own.
+
+When the app starts the server itself (transportable mode), it stops it again
+on quit; when the LaunchAgent is providing the server, it leaves it running.
+
 ## Live background service (macOS)
 
 The API server can run as a LaunchAgent so the dashboard stays live whenever

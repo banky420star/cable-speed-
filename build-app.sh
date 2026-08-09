@@ -62,6 +62,23 @@ if [ -f assets/icon-source.png ]; then
   rm -rf /tmp/cable-icon.iconset
 fi
 
+# Embed the runtime payload (zero-dep server + built dashboard) so the .app
+# is transportable: copy it to any Mac and the launcher serves the dashboard
+# from inside the bundle. (Still needs Node.js installed on the target Mac.)
+RUNTIME="$APP/Contents/Resources/runtime"
+rm -rf "$RUNTIME"
+mkdir -p "$RUNTIME"
+cp server.cjs "$RUNTIME/"
+cp -R dist "$RUNTIME/dist"
+cp package.json "$RUNTIME/"
+
+# Optional: a node binary in ./node-bin/ makes the app fully standalone
+# (no Node install needed on the target Mac).
+if [ -x node-bin/node ]; then
+  cp node-bin/node "$RUNTIME/node"
+  echo "Bundled node binary (fully standalone build)"
+fi
+
 # Ad-hoc sign so the app runs cleanly.
 codesign --force --deep --sign - "$APP"
 echo "Built: $APP"
