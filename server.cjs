@@ -526,8 +526,10 @@ async function powerLive() {
   // Sanity bounds: battery currents stay within ±20 A; pack voltage within 8–16 V.
   const saneA = amperageMa !== null && Math.abs(amperageMa) <= 20000 ? amperageMa : null;
   const saneV = voltageMv !== null && voltageMv >= 8000 && voltageMv <= 16000 ? voltageMv : null;
+  // Signed watts: positive = charging, negative = discharging. Zero means the
+  // battery is full (or idle) — not a fault.
   const liveWatts = saneA !== null && saneV !== null
-    ? Math.round((Math.abs(saneA) * saneV / 1e6) * 10) / 10
+    ? Math.round((saneA * saneV / 1e6) * 10) / 10
     : null;
   return {
     battery_percent: num('CurrentCapacity'),
@@ -536,6 +538,7 @@ async function powerLive() {
     amperage_ma: saneA,
     voltage_mv: saneV,
     live_watts: liveWatts,
+    discharging: saneA !== null && saneA < 0,
   };
 }
 

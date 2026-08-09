@@ -227,6 +227,7 @@ test('GET /api/power returns the power fields', async () => {
   assert.ok('charging' in json);
   assert.ok('charger_watts' in json);
   assert.ok('live_watts' in json);
+  assert.ok('discharging' in json);
 });
 
 test('unknown API paths return 404', async () => {

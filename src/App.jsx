@@ -380,7 +380,7 @@ function TestWidget({ cable, power, memory, cpu, internet, testing, runFullTest 
     { label: 'Download', value: internet?.down_mbps != null ? `${internet.down_mbps} Mbps` : '—', status: 'var(--blue)' },
     { label: 'Upload', value: internet?.up_mbps != null ? `${internet.up_mbps} Mbps` : '—', status: 'var(--green)' },
     { label: 'Battery', value: power?.battery_percent != null ? `${power.battery_percent}%` : '—', status: sc(power?.battery_percent < 20 ? 'bad' : power?.battery_percent < 50 ? 'warn' : 'good') },
-    { label: 'Charge rate', value: power?.live_watts != null ? `${power.live_watts} W` : '—', status: 'var(--green)' },
+    { label: 'Charge rate', value: power?.live_watts != null ? `${power.live_watts.toFixed(1)} W` : '—', status: power?.live_watts < 0 ? 'var(--orange)' : 'var(--green)' },
   ];
   return (
     <div className="widget">
@@ -440,21 +440,25 @@ function BatteryWidget({ power, history }) {
 
 function ChargeWidget({ power, history }) {
   const w = power.live_watts ?? 0;
-  const active = w > 1;
-  const wattSeries = history.map((h) => h.watts).filter((x) => x != null);
+  const discharging = power.discharging === true || w < 0;
+  const charging = !discharging && w > 1;
+  const state = discharging ? 'discharging' : charging ? 'charging' : power.fully_charged ? 'battery full' : 'idle';
+  const color = discharging ? 'var(--orange)' : charging ? 'var(--green)' : 'var(--muted)';
+  const wattSeries = history.map((h) => Math.abs(h.watts)).filter((x) => x != null);
   return (
     <div className="widget">
       <div className="widget-body">
-        <div className="big" style={{ color: active ? 'var(--green)' : 'var(--muted)' }}>
-          {active ? <AnimatedNumber value={w} decimals={1} /> : '0.0'}
+        <div className="big" style={{ color }}>
+          {Math.abs(w) < 0.05 ? '0.0' : <AnimatedNumber value={Math.abs(w)} decimals={1} />}
           <span className="big-suffix"> W</span>
         </div>
         <div className="sub-line">
+          {state}
           {power.amperage_ma != null && power.voltage_mv != null
-            ? `${Math.abs(power.amperage_ma)} mA · ${(power.voltage_mv / 1000).toFixed(1)} V`
-            : 'no battery data'}
+            ? ` · ${Math.abs(power.amperage_ma)} mA · ${(power.voltage_mv / 1000).toFixed(1)} V`
+            : ''}
         </div>
-        <Sparkline points={wattSeries} max={Math.max(5, ...wattSeries)} color="var(--green)" height={24} />
+        <Sparkline points={wattSeries} max={Math.max(5, ...wattSeries)} color={color} height={24} />
       </div>
     </div>
   );
