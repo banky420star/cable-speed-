@@ -324,6 +324,44 @@ async function internetStatus() {
   };
 }
 
+// ---------- CPU / top processes ----------
+// Load = sum of all process %cpu (each as % of one core) / core count.
+// Top processes come from one ps call sorted by CPU.
+function parsePsProcs(out) {
+  const rows = [];
+  for (const line of out.split('\n')) {
+    const m = line.match(/^\s*([\d.]+)\s+(\d+)\s+(.+)$/);
+    if (!m) continue;
+    const cpu = parseFloat(m[1]);
+    const rssKb = Number(m[2]);
+    if (!Number.isFinite(cpu)) continue;
+    rows.push({
+      cpu,
+      mem_mb: Number.isFinite(rssKb) ? Math.round(rssKb / 1024) : null,
+      name: m[3].trim().slice(0, 40),
+    });
+  }
+  return rows;
+}
+
+async function cpuStatus() {
+  const [load, cores, procs] = await Promise.all([
+    run("ps -A -o %cpu= | awk '{s+=$1} END {printf \"%.1f\", s}'"),
+    run('sysctl -n hw.ncpu 2>/dev/null'),
+    run('ps -A -o %cpu=,rss=,comm= | sort -rn | head -6'),
+  ]);
+  const sum = parseFloat((load.stdout || '').trim());
+  const coresN = Number((cores.stdout || '').trim()) || 1;
+  const loadPct = Number.isFinite(sum)
+    ? Math.min(100, Math.round((sum / coresN) * 10) / 10)
+    : null;
+  return {
+    load_pct: loadPct,
+    cores: coresN,
+    processes: parsePsProcs(procs.stdout || ''),
+  };
+}
+
 // ---------- Memory / RAM ----------
 // Live usage from vm_stat; the speed is the chip's published spec (macOS
 // does not expose the memory clock, so we report the known LPDDR speed).
@@ -662,13 +700,14 @@ async function powerStatus() {
 }
 
 async function statusPayload({ withBenchmark = false, volume = null } = {}) {
-  const [cable, power, internet, memory] = await Promise.all([
+  const [cable, power, internet, memory, cpu] = await Promise.all([
     cableStatus({ withBenchmark, volume }),
     powerStatus(),
     internetStatus(),
     memoryStatus(),
+    cpuStatus(),
   ]);
-  return { ts: new Date().toISOString(), cable, power, internet, memory };
+  return { ts: new Date().toISOString(), cable, power, internet, memory, cpu };
 }
 
 // Last benchmark per volume, so live pushes keep showing the result.
@@ -753,6 +792,18 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === '/api/memory') {
       return sendJson(200, await memoryStatus());
     }
+    if (url.pathname === '/api/cpu') {
+      return sendJson(200, await cpuStatus());
+    }
+    if (url.pathname === '/api/purge' && req.method === 'POST') {
+      // Flush inactive memory caches. macOS pops the native admin prompt.
+      const r = await run(
+        `osascript -e 'do shell script "purge" with administrator privileges' 2>/dev/null`,
+        120000
+      );
+      if (r.code === 0) return sendJson(200, { ok: true });
+      return sendJson(500, { ok: false, error: 'purge failed — was the password prompt cancelled?' });
+    }
     if (url.pathname.startsWith('/api/')) {
       return sendJson(404, { error: 'unknown endpoint' });
     }
@@ -780,4 +831,4 @@ if (require.main === module) {
 }
 
 // Only listens when run directly; exports the pure helpers for unit tests.
-module.exports = { parseIOReg, wsAccept, encodeFrame, USB_SPEEDS, parseNetstat, parseDF, parseVmStat, matchChip };
+module.exports = { parseIOReg, wsAccept, encodeFrame, USB_SPEEDS, parseNetstat, parseDF, parseVmStat, matchChip, parsePsProcs };

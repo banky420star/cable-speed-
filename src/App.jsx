@@ -80,19 +80,7 @@ function AnimatedNumber({ value, decimals = 0, duration = 700 }) {
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
   }, [value, duration]);
-  // Micro-interaction: a quick scale pop whenever the value changes.
-  const [pop, setPop] = useState(false);
-  const prevVal = useRef(value);
-  useEffect(() => {
-    if (value !== prevVal.current) {
-      prevVal.current = value;
-      setPop(true);
-      const t = setTimeout(() => setPop(false), 380);
-      return () => clearTimeout(t);
-    }
-    return undefined;
-  }, [value]);
-  return <span className={`anim-num${pop ? ' pop' : ''}`}>{display.toFixed(decimals)}</span>;
+  return <span className="anim-num">{display.toFixed(decimals)}</span>;
 }
 
 function Sparkline({ points, max, color, height = 46 }) {
@@ -218,7 +206,8 @@ function CapacityWidget({ cable }) {
   );
 }
 
-function MemoryWidget({ memory }) {
+function MemoryWidget({ memory, history, purgeMemory, purging }) {
+  const memSeries = history.map((h) => h.mem).filter((x) => x != null);
   const total = memory?.total_gb ?? null;
   const used = memory?.used_gb ?? null;
   const free = memory?.free_gb ?? null;
@@ -267,15 +256,81 @@ function MemoryWidget({ memory }) {
         <div className="cap-bar">
           <span className="cap-fill" style={{ width: `${Math.min(100, pct)}%`, background: color }} />
         </div>
+        <div className="spark-head">
+          <span>Memory used (live)</span>
+          <span className="spark-live">{memSeries.length ? `last ${memSeries.length} samples` : 'waiting for data…'}</span>
+        </div>
+        <Sparkline points={memSeries} max={100} color={color} height={30} />
+        <div className="ram-actions">
+          <button className="purge-btn" onClick={purgeMemory} disabled={purging}>
+            {purging ? 'Clearing…' : 'Clear cached data'}
+          </button>
+          <span className="purge-hint">flushes inactive memory · asks for your password</span>
+        </div>
       </div>
     </div>
   );
 }
 
-function InternetWidget({ internet }) {
+function CpuWidget({ cpu }) {
+  const load = cpu?.load_pct ?? null;
+  const cores = cpu?.cores ?? null;
+  const color = load == null ? 'var(--muted2)' : load > 85 ? 'var(--red)' : load > 60 ? 'var(--orange)' : 'var(--green)';
+  const procs = cpu?.processes || [];
+  return (
+    <div className="widget w-2">
+      <div className="widget-body">
+        <div className="through-row">
+          <RingGauge ratio={(load ?? 0) / 100} color={color}>
+            <div className="g-num" style={{ color }}>
+              {load == null ? '—' : <AnimatedNumber value={load} decimals={0} />}
+            </div>
+            <div className="g-unit">% load</div>
+          </RingGauge>
+          <div className="through-meta">
+            <div className="stat-line">
+              <span className="k">cores</span>
+              <span className="val">{cores ?? '—'}</span>
+            </div>
+            <div className="stat-line">
+              <span className="k">top process</span>
+              <span className="val proc-top-name">{procs[0]?.name || '—'}</span>
+            </div>
+            <div className="stat-line">
+              <span className="k">top cpu</span>
+              <span className="val" style={{ color }}>{procs[0]?.cpu != null ? `${procs[0].cpu.toFixed(1)}%` : '—'}</span>
+            </div>
+          </div>
+        </div>
+        <div className="spark-head">
+          <span>Top processes by CPU</span>
+          <span className="spark-live">live</span>
+        </div>
+        <div className="proc-list">
+          {procs.length === 0 && <div className="proc-empty">waiting for data…</div>}
+          {procs.slice(0, 5).map((p, i) => (
+            <div className="proc-row" key={i}>
+              <span className="proc-rank">{i + 1}</span>
+              <span className="proc-name" title={p.name}>{p.name}</span>
+              <span className="proc-bar"><i style={{ width: `${Math.min(100, p.cpu)}%`, background: color }} /></span>
+              <span className="proc-cpu">{p.cpu.toFixed(1)}%</span>
+              <span className="proc-mem">{p.mem_mb != null ? `${p.mem_mb} MB` : ''}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function InternetWidget({ internet, history }) {
   const down = internet?.down_mbps ?? null;
   const up = internet?.up_mbps ?? null;
   const iface = internet?.interface;
+  const downSeries = history.map((h) => h.down).filter((x) => x != null);
+  const upSeries = history.map((h) => h.up).filter((x) => x != null);
+  const downMax = Math.max(50, ...downSeries);
+  const upMax = Math.max(50, ...upSeries);
   return (
     <div className="widget">
       <div className="widget-body net-body">
@@ -295,15 +350,38 @@ function InternetWidget({ internet }) {
           <div className="net-label">upload <b>Mbps</b></div>
         </div>
       </div>
-      <div className="net-foot">{iface ? `live via ${iface}` : 'no active network interface'} · pushes update every few seconds</div>
+      <div className="net-spark">
+        <div className="net-spark-row">
+          <span className="net-spark-label down">↓</span>
+          <Sparkline points={downSeries} max={downMax} color="var(--blue)" height={18} />
+        </div>
+        <div className="net-spark-row">
+          <span className="net-spark-label up">↑</span>
+          <Sparkline points={upSeries} max={upMax} color="var(--green)" height={18} />
+        </div>
+      </div>
+      <div className="net-foot">{iface ? `live via ${iface}` : 'no active network interface'} · history fills as data flows</div>
     </div>
   );
 }
 
-function TestWidget({ cable, testing, runFullTest }) {
+function TestWidget({ cable, power, memory, cpu, internet, testing, runFullTest }) {
   const bench = cable.benchmark?.mb_per_sec ?? null;
   const capable = cable.capable?.mb_per_sec ?? null;
   const pct = bench != null && capable ? Math.round((bench / capable) * 100) : null;
+  const sc = (level) => (level === 'good' ? 'var(--green)' : level === 'warn' ? 'var(--orange)' : level === 'bad' ? 'var(--red)' : 'var(--muted2)');
+  const cap = cable.capacity || {};
+  const rows = [
+    { label: 'Cable link', value: cable.device?.speed_label || '—', status: sc(cable.verdict?.level === 'bottleneck' ? 'bad' : cable.verdict?.level === 'slow' ? 'warn' : 'good') },
+    { label: 'Drive read', value: bench != null ? `${fmtMBs(bench)} MB/s` : '—', status: sc(bench != null && capable && bench / capable >= 0.6 ? 'good' : bench != null ? 'bad' : 'none') },
+    { label: 'Drive capacity', value: cap.percent_used != null ? `${cap.percent_used}% used` : '—', status: sc(cap.percent_used > 90 ? 'bad' : cap.percent_used > 75 ? 'warn' : 'good') },
+    { label: 'Memory', value: memory?.percent_used != null ? `${memory.percent_used}% used` : '—', status: sc(memory?.percent_used > 90 ? 'bad' : memory?.percent_used > 75 ? 'warn' : 'good') },
+    { label: 'CPU load', value: cpu?.load_pct != null ? `${cpu.load_pct}%` : '—', status: sc(cpu?.load_pct > 85 ? 'bad' : cpu?.load_pct > 60 ? 'warn' : 'good') },
+    { label: 'Download', value: internet?.down_mbps != null ? `${internet.down_mbps} Mbps` : '—', status: 'var(--blue)' },
+    { label: 'Upload', value: internet?.up_mbps != null ? `${internet.up_mbps} Mbps` : '—', status: 'var(--green)' },
+    { label: 'Battery', value: power?.battery_percent != null ? `${power.battery_percent}%` : '—', status: sc(power?.battery_percent < 20 ? 'bad' : power?.battery_percent < 50 ? 'warn' : 'good') },
+    { label: 'Charge rate', value: power?.live_watts != null ? `${power.live_watts} W` : '—', status: 'var(--green)' },
+  ];
   return (
     <div className="widget">
       <div className="widget-body">
@@ -319,15 +397,29 @@ function TestWidget({ cable, testing, runFullTest }) {
           </div>
         )}
         {cable.bench_file && <div className="tiny">file: {cable.bench_file}</div>}
+        <div className="summary-head">
+          <span>Live summary · all sections</span>
+          <span className="spark-live">updates with each push</span>
+        </div>
+        <div className="summary-list">
+          {rows.map((r) => (
+            <div className="summary-row" key={r.label}>
+              <span className="summary-dot" style={{ background: r.status, boxShadow: `0 0 6px ${r.status}` }} />
+              <span className="summary-label">{r.label}</span>
+              <span className="summary-val" style={{ color: r.status }}>{r.value}</span>
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );
 }
 
-function BatteryWidget({ power }) {
+function BatteryWidget({ power, history }) {
   const pct = power.battery_percent ?? 0;
   const charging = power.charging || (power.live_watts > 1 && !power.fully_charged);
   const color = pct < 20 ? 'var(--red)' : pct < 50 ? 'var(--orange)' : 'var(--green)';
+  const batSeries = history.map((h) => h.bat).filter((x) => x != null);
   return (
     <div className="widget">
       <div className="widget-body">
@@ -340,14 +432,16 @@ function BatteryWidget({ power }) {
         <div className="batt-track">
           <i className={`batt-fill${charging ? ' charging' : ''}`} style={{ width: `${pct}%`, background: color }} />
         </div>
+        <Sparkline points={batSeries} max={100} color={color} height={24} />
       </div>
     </div>
   );
 }
 
-function ChargeWidget({ power }) {
+function ChargeWidget({ power, history }) {
   const w = power.live_watts ?? 0;
   const active = w > 1;
+  const wattSeries = history.map((h) => h.watts).filter((x) => x != null);
   return (
     <div className="widget">
       <div className="widget-body">
@@ -360,6 +454,7 @@ function ChargeWidget({ power }) {
             ? `${Math.abs(power.amperage_ma)} mA · ${(power.voltage_mv / 1000).toFixed(1)} V`
             : 'no battery data'}
         </div>
+        <Sparkline points={wattSeries} max={Math.max(5, ...wattSeries)} color="var(--green)" height={24} />
       </div>
     </div>
   );
@@ -407,13 +502,16 @@ function DiagnosisWidget({ cable }) {
 const WIDGETS = [
   { key: 'cable', title: 'Cable Speed', icon: ICONS.usb, render: ({ cable, history }) => <CableWidget cable={cable} history={history} />, span: 2 },
   { key: 'capacity', title: 'Drive Capacity', icon: ICONS.drive, render: ({ cable }) => <CapacityWidget cable={cable} />, span: 2 },
-  { key: 'memory', title: 'RAM Speed', icon: ICONS.chip, render: ({ memory }) => <MemoryWidget memory={memory} />, span: 2 },
-  { key: 'internet', title: 'Internet Speed', icon: ICONS.net, render: ({ internet }) => <InternetWidget internet={internet} /> },
-  { key: 'battery', title: 'Battery', icon: ICONS.battery, render: ({ power }) => <BatteryWidget power={power} /> },
-  { key: 'charge', title: 'Charge Rate', icon: ICONS.bolt, render: ({ power }) => <ChargeWidget power={power} /> },
+  { key: 'memory', title: 'RAM Speed', icon: ICONS.chip, render: ({ memory, history, purgeMemory, purging }) => <MemoryWidget memory={memory} history={history} purgeMemory={purgeMemory} purging={purging} />, span: 2 },
+  { key: 'cpu', title: 'CPU', icon: ICONS.chip, render: ({ cpu, history }) => <CpuWidget cpu={cpu} history={history} />, span: 2 },
+  { key: 'internet', title: 'Internet Speed', icon: ICONS.net, render: ({ internet, history }) => <InternetWidget internet={internet} history={history} /> },
+  { key: 'battery', title: 'Battery', icon: ICONS.battery, render: ({ power, history }) => <BatteryWidget power={power} history={history} /> },
+  { key: 'charge', title: 'Charge Rate', icon: ICONS.bolt, render: ({ power, history }) => <ChargeWidget power={power} history={history} /> },
   { key: 'charger', title: 'Charger', icon: ICONS.plug, render: ({ power }) => <ChargerWidget power={power} /> },
   { key: 'health', title: 'Battery Health', icon: ICONS.heart, render: ({ power }) => <HealthWidget power={power} /> },
-  { key: 'test', title: 'Speed Test', icon: ICONS.info, render: ({ cable, testing, runFullTest }) => <TestWidget cable={cable} testing={testing} runFullTest={runFullTest} /> },
+  { key: 'test', title: 'Speed Test', icon: ICONS.info, render: ({ cable, power, memory, cpu, internet, testing, runFullTest }) => (
+    <TestWidget cable={cable} power={power} memory={memory} cpu={cpu} internet={internet} testing={testing} runFullTest={runFullTest} />
+  ) },
   { key: 'diagnosis', title: 'Diagnosis', icon: ICONS.info, render: ({ cable }) => <DiagnosisWidget cable={cable} />, span: 2 },
 ];
 
@@ -428,6 +526,7 @@ export default function App() {
   const [volume, setVolume] = useState(null); // selected external drive
   const [flash, setFlash] = useState(false); // live-pill ripple on refresh
   const [removing, setRemoving] = useState(null); // widget mid-hide animation
+  const [purging, setPurging] = useState(false); // RAM cache flush in flight
   const gridRef = useRef(null);
   const wsConnectedRef = useRef(false);
   const [order, setOrder] = useState(() => {
@@ -440,10 +539,12 @@ export default function App() {
   const [hidden, setHidden] = useState(() => new Set(store.get('cs_hidden', [])));
   const [dragKey, setDragKey] = useState(null);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [compact, setCompact] = useState(() => store.get('cs_compact', false));
   const historyRef = useRef([]);
 
   useEffect(() => store.set('cs_order', order), [order]);
   useEffect(() => store.set('cs_hidden', [...hidden]), [hidden]);
+  useEffect(() => store.set('cs_compact', compact), [compact]);
 
   const poll = useCallback(
     async (vol) => {
@@ -460,7 +561,16 @@ export default function App() {
       setTimeout(() => setFlash(false), 800);
       historyRef.current = [
         ...historyRef.current.slice(-(HISTORY_MAX - 1)),
-        { ts: Date.now(), live: json.cable?.live_mb_per_sec ?? null, watts: json.power?.live_watts ?? null },
+        {
+          ts: Date.now(),
+          live: json.cable?.live_mb_per_sec ?? null,
+          watts: json.power?.live_watts ?? null,
+          down: json.internet?.down_mbps ?? null,
+          up: json.internet?.up_mbps ?? null,
+          mem: json.memory?.percent_used ?? null,
+          bat: json.power?.battery_percent ?? null,
+          cpu: json.cpu?.load_pct ?? null,
+        },
       ];
       } catch (err) {
         if (EMBEDDED) {
@@ -476,6 +586,21 @@ export default function App() {
     },
     [volume]
   );
+
+  const purgeMemory = useCallback(async () => {
+    setPurging(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/purge`, { method: 'POST' });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || json.error) throw new Error(json.error || `API returned ${res.status}`);
+      setFlash(true);
+      setTimeout(() => setFlash(false), 800);
+    } catch (err) {
+      setError(err.message || String(err));
+    } finally {
+      setPurging(false);
+    }
+  }, []);
 
   const runFullTest = useCallback(async () => {
     setTesting(true);
@@ -523,7 +648,16 @@ export default function App() {
       setIsLive(true);
       historyRef.current = [
         ...historyRef.current.slice(-(HISTORY_MAX - 1)),
-        { ts: Date.now(), live: json.cable?.live_mb_per_sec ?? null, watts: json.power?.live_watts ?? null },
+        {
+          ts: Date.now(),
+          live: json.cable?.live_mb_per_sec ?? null,
+          watts: json.power?.live_watts ?? null,
+          down: json.internet?.down_mbps ?? null,
+          up: json.internet?.up_mbps ?? null,
+          mem: json.memory?.percent_used ?? null,
+          bat: json.power?.battery_percent ?? null,
+          cpu: json.cpu?.load_pct ?? null,
+        },
       ];
     };
     const connect = () => {
@@ -593,8 +727,11 @@ export default function App() {
     power: data?.power || {},
     internet: data?.internet || {},
     memory: data?.memory || {},
+    cpu: data?.cpu || {},
     testing,
     runFullTest,
+    purgeMemory,
+    purging,
     history: historyRef.current,
   };
   const live = data?.cable?.live_mb_per_sec;
@@ -610,7 +747,7 @@ export default function App() {
             Cable &amp; Charging <span className="accent">Monitor</span>
           </h1>
           <div className="subtitle">
-            Live USB throughput · link speed · charge rate
+            Live system monitor · cpu · memory · network · power
             {EMBEDDED && !isLive && <span className="static-note"> · static snapshot</span>}
           </div>
         </div>
@@ -663,7 +800,7 @@ export default function App() {
         </div>
       )}
 
-      {data && (              <main ref={gridRef} className="grid" onDragOver={(e) => e.preventDefault()} onDrop={(e) => e.preventDefault()}>
+      {data && (              <main ref={gridRef} className={`grid${compact ? ' compact' : ''}`} onDragOver={(e) => e.preventDefault()} onDrop={(e) => e.preventDefault()}>
           {visible.map((key, i) => {
             const w = WIDGETS.find((x) => x.key === key);
             if (!w) return null;
@@ -729,6 +866,9 @@ export default function App() {
           </span>
           Live updates · WebSocket
         </label>
+        <button className={`compact-btn${compact ? ' on' : ''}`} onClick={() => setCompact(!compact)} title="Single dense column for small windows">
+          {compact ? '◫ Wide layout' : '▦ Compact mode'}
+        </button>
         {data?.ts && <span className="updated">updated {new Date(data.ts).toLocaleTimeString()}</span>}
       </div>
     </>

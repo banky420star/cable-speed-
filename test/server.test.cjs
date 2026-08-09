@@ -7,7 +7,7 @@ const crypto = require('node:crypto');
 const path = require('node:path');
 
 const PROJECT = path.join(__dirname, '..');
-const { parseIOReg, wsAccept, encodeFrame, USB_SPEEDS, parseNetstat, parseDF, parseVmStat, matchChip } = require(path.join(PROJECT, 'server.cjs'));
+const { parseIOReg, wsAccept, encodeFrame, USB_SPEEDS, parseNetstat, parseDF, parseVmStat, matchChip, parsePsProcs } = require(path.join(PROJECT, 'server.cjs'));
 
 // ------------------------------ unit tests ------------------------------
 
@@ -81,6 +81,20 @@ test('parseVmStat reads the live memory counters', () => {
   assert.equal(s.speculative, 10);
   assert.equal(s.wired, 30);
   assert.equal(s.compressed, 20);
+});
+
+test('parsePsProcs reads top processes from ps output', () => {
+  const out = [
+    ' 87.5  123456 /usr/bin/Some App',
+    ' 12.3  2048  launchd',
+    '  1.1  5120  WindowServer',
+  ].join('\n');
+  const rows = parsePsProcs(out);
+  assert.equal(rows.length, 3);
+  assert.deepEqual(rows[0], { cpu: 87.5, mem_mb: 121, name: '/usr/bin/Some App' });
+  assert.equal(rows[1].cpu, 12.3);
+  assert.equal(rows[1].mem_mb, 2);
+  assert.equal(rows[2].name, 'WindowServer');
 });
 
 test('matchChip maps the brand string to the LPDDR spec', () => {
@@ -188,6 +202,10 @@ test('GET /api/status returns cable + power + internet payloads', async () => {
     assert.ok(k in json.memory, `memory.${k} present`);
   }
   assert.equal(typeof json.memory.percent_used, 'number', 'percent_used is a number');
+  assert.ok(json.cpu && typeof json.cpu === 'object', 'cpu payload present');
+  assert.ok('load_pct' in json.cpu);
+  assert.ok('cores' in json.cpu);
+  assert.ok(Array.isArray(json.cpu.processes));
 });
 
 test('GET /api/cable-speed returns the cable object at top level', async () => {

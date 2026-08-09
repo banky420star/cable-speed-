@@ -11,7 +11,16 @@ A macOS-only React dashboard that shows, in real time:
   `netstat -ib` counter deltas on the default interface.
 - **RAM speed** — live used/free/cached memory with a pressure gauge
   (`vm_stat`), plus the chip's published LPDDR spec (e.g. M4 → 7500 MT/s,
-  120 GB/s) since macOS does not expose the memory clock.
+  120 GB/s) since macOS does not expose the memory clock. Includes a
+  **Clear cached data** button that flushes inactive memory (macOS admin
+  prompt).
+- **CPU** — live load % and the top processes by CPU/RAM (`ps`).
+- **Live history** — every widget draws a sparkline of its recent samples
+  (throughput, memory, CPU, battery, charge rate, upload/download).
+- **Speed Test summary** — the Speed Test widget also shows a live summary
+  of all sections with status dots.
+- **Compact mode** — a toggle in the footer collapses the dashboard into a
+  single dense column for small windows (persisted in localStorage).
 - **Full speed test** — an on-demand `dd` read benchmark that measures the
   drive's real maximum read speed.
 - **Charging** — charger wattage, battery %, live charge rate in watts
