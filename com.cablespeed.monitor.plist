@@ -7,7 +7,7 @@
 	<key>ProgramArguments</key>
 	<array>
 		<string>/opt/homebrew/opt/node/bin/node</string>
-		<string>/Volumes/AI_DRIVE/untitled folder/server.cjs</string>
+		<string>/Volumes/AI_DRIVE/cable app/server.cjs</string>
 	</array>
 	<key>RunAtLoad</key>
 	<true/>

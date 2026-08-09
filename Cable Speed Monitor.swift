@@ -71,7 +71,7 @@ private func findProjectDirectory() -> URL? {
     let candidates = [
         Bundle.main.resourceURL?.appendingPathComponent("runtime"),
         Bundle.main.bundleURL.deletingLastPathComponent(),
-        URL(fileURLWithPath: "/Volumes/AI_DRIVE/untitled folder"),
+        URL(fileURLWithPath: "/Volumes/AI_DRIVE/cable app"),
     ]
     for dir in candidates {
         if let dir = dir,
